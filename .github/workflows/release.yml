@@ -4,13 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
-    paths:
-      - 'cmd/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
 
 permissions:
   contents: write
@@ -20,49 +13,41 @@ env:
   NODE_VERSION: '20'
 
 jobs:
-  # Determine if this is a release or a development build
-  prepare:
+  release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-      is_release: ${{ steps.version.outputs.IS_RELEASE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Determine version
+      - name: Get version
         id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            IS_RELEASE="true"
-          else
-            # Development version from main branch
-            VERSION="0.0.0-dev.$(git rev-parse --short HEAD)"
-            IS_RELEASE="false"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "IS_RELEASE=$IS_RELEASE" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION, Is Release: $IS_RELEASE"
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-  # Build binaries for all platforms
-  build:
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Build web UI
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cd ..
+          rm -rf internal/api/ui
+          mkdir -p internal/api/ui
+          cp -r web/dist/* internal/api/ui/
+
       - name: Build binaries
         run: |
-          VERSION=${{ needs.prepare.outputs.version }}
+          VERSION=${{ steps.version.outputs.VERSION }}
 
           for PLATFORM in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; do
             GOOS="${PLATFORM%/*}"
@@ -84,7 +69,7 @@ jobs:
 
       - name: Create archives
         run: |
-          VERSION=${{ needs.prepare.outputs.version }}
+          VERSION=${{ steps.version.outputs.VERSION }}
           cd dist
 
           for dir in ugudu_${VERSION}_darwin_* ugudu_${VERSION}_linux_*; do
@@ -100,296 +85,32 @@ jobs:
           shasum -a 256 *.tar.gz *.zip > checksums.txt
           cat checksums.txt
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  # Build desktop app for each platform
-  build-desktop:
-    needs: prepare
-    if: needs.prepare.outputs.is_release == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-intel
-            runner: macos-13
-            target: x86_64-apple-darwin
-          - platform: macos-arm
-            runner: macos-14
-            target: aarch64-apple-darwin
-          - platform: linux
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - platform: windows
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-action@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli
-
-      - name: Build desktop app
-        run: |
-          cd desktop
-          cargo tauri build --target ${{ matrix.target }}
-
-      - name: Upload macOS artifacts
-        if: startsWith(matrix.platform, 'macos')
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.platform }}
-          path: |
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
-
-      - name: Upload Linux artifacts
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.platform }}
-          path: |
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-
-      - name: Upload Windows artifacts
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.platform }}
-          path: |
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-
-  # Create GitHub Release (only for tags)
-  github-release:
-    needs: [prepare, build, build-desktop]
-    if: needs.prepare.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download CLI artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          path: desktop-dist/
-          merge-multiple: true
-
-      - name: Prepare release files
-        run: |
-          # Move desktop apps to dist folder
-          find desktop-dist -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" -o -name "*.exe" \) -exec mv {} dist/ \;
-          cd dist
-          # Regenerate checksums including desktop apps
-          shasum -a 256 * > checksums.txt
-          cat checksums.txt
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: dist/*
           generate_release_notes: true
           body: |
-            ## Ugudu v${{ needs.prepare.outputs.version }}
+            ## Ugudu v${{ steps.version.outputs.VERSION }}
 
-            ### CLI Installation
+            ### Install
 
             **macOS/Linux:**
             ```bash
-            # Homebrew
-            brew install arcslash/tap/ugudu
-
-            # npm
-            npm install -g @arcslash/ugudu
-
-            # Direct download
-            curl -fsSL https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare.outputs.version }}/ugudu_${{ needs.prepare.outputs.version }}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m).tar.gz | tar xz
-            sudo mv ugudu /usr/local/bin/
+            curl -fsSL https://raw.githubusercontent.com/arcslash/ugudu/main/install.sh | bash
             ```
 
-            **Windows:**
+            **Windows (PowerShell):**
             ```powershell
-            # Chocolatey
-            choco install ugudu
-
-            # Or download the .zip from below
+            irm https://raw.githubusercontent.com/arcslash/ugudu/main/install.ps1 | iex
             ```
-
-            ### Desktop App
-
-            - **macOS**: Download `.dmg` installer
-            - **Linux**: Download `.deb` (Debian/Ubuntu) or `.AppImage` (universal)
-            - **Windows**: Download `.msi` or `.exe` installer
 
             ### Quick Start
 
             ```bash
-            # Start daemon with web UI
-            ugudu daemon
-
-            # Open http://localhost:8080 in browser
-            # Or launch the desktop app
+            ugudu setup          # Configure API keys
+            ugudu daemon         # Start with web UI
+            open http://localhost:9741
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Publish to npm
-  npm-publish:
-    needs: [prepare, build]
-    if: needs.prepare.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Update version
-        run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version
-
-      - name: Prepare package
-        run: |
-          mkdir -p bin
-          node scripts/prepack.js
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  # Update Homebrew tap
-  homebrew-publish:
-    needs: [prepare, build, github-release]
-    if: needs.prepare.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Calculate checksums
-        id: checksums
-        run: |
-          cd dist
-          echo "SHA_DARWIN_ARM64=$(grep darwin_arm64.tar.gz checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
-          echo "SHA_DARWIN_AMD64=$(grep darwin_amd64.tar.gz checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
-          echo "SHA_LINUX_ARM64=$(grep linux_arm64.tar.gz checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
-          echo "SHA_LINUX_AMD64=$(grep linux_amd64.tar.gz checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
-
-      - name: Update Homebrew formula
-        run: |
-          VERSION=${{ needs.prepare.outputs.version }}
-
-          # Update version
-          sed -i 's/version ".*"/version "'${VERSION}'"/' Formula/ugudu.rb
-
-          # Update checksums (simplified - in production, use a proper Homebrew tap repo)
-          sed -i 's/REPLACE_WITH_ACTUAL_SHA256/${{ steps.checksums.outputs.SHA_DARWIN_ARM64 }}/' Formula/ugudu.rb
-
-      - name: Commit and push formula
-        uses: EndBug/add-and-commit@v9
-        with:
-          add: 'Formula/ugudu.rb'
-          message: 'Update Homebrew formula to v${{ needs.prepare.outputs.version }}'
-          push: true
-
-  # Publish to Chocolatey
-  chocolatey-publish:
-    needs: [prepare, build, github-release]
-    if: needs.prepare.outputs.is_release == 'true'
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Calculate checksum
-        id: checksum
-        shell: pwsh
-        run: |
-          $checksum = (Get-Content dist/checksums.txt | Select-String "windows_amd64.zip" | ForEach-Object { $_.ToString().Split()[0] })
-          echo "SHA_WINDOWS=$checksum" >> $env:GITHUB_OUTPUT
-
-      - name: Update Chocolatey package
-        shell: pwsh
-        run: |
-          $version = "${{ needs.prepare.outputs.version }}"
-          $checksum = "${{ steps.checksum.outputs.SHA_WINDOWS }}"
-
-          # Update nuspec version
-          (Get-Content chocolatey/ugudu.nuspec) -replace '<version>.*</version>', "<version>$version</version>" | Set-Content chocolatey/ugudu.nuspec
-
-          # Update install script
-          $installScript = Get-Content chocolatey/tools/chocolateyinstall.ps1
-          $installScript = $installScript -replace "version = '.*'", "version = '$version'"
-          $installScript = $installScript -replace "checksum64\s*= '.*'", "checksum64 = '$checksum'"
-          $installScript | Set-Content chocolatey/tools/chocolateyinstall.ps1
-
-      - name: Pack Chocolatey package
-        run: choco pack chocolatey/ugudu.nuspec --outputdirectory chocolatey
-
-      - name: Push to Chocolatey
-        run: choco push chocolatey/ugudu.${{ needs.prepare.outputs.version }}.nupkg --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCOLATEY_API_KEY }}
-
-  # Notify on completion
-  notify:
-    needs: [prepare, npm-publish, homebrew-publish, chocolatey-publish]
-    if: always() && needs.prepare.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Summary
-        run: |
-          echo "## Release v${{ needs.prepare.outputs.version }} Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Package Manager | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| npm | ${{ needs.npm-publish.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Homebrew | ${{ needs.homebrew-publish.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Chocolatey | ${{ needs.chocolatey-publish.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Installation" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo '# npm' >> $GITHUB_STEP_SUMMARY
-          echo 'npm install -g @arcslash/ugudu' >> $GITHUB_STEP_SUMMARY
-          echo '' >> $GITHUB_STEP_SUMMARY
-          echo '# Homebrew (macOS/Linux)' >> $GITHUB_STEP_SUMMARY
-          echo 'brew install arcslash/tap/ugudu' >> $GITHUB_STEP_SUMMARY
-          echo '' >> $GITHUB_STEP_SUMMARY
-          echo '# Chocolatey (Windows)' >> $GITHUB_STEP_SUMMARY
-          echo 'choco install ugudu' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY

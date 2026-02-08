@@ -131,8 +131,8 @@ The daemon:
 - Persists state across restarts
 
 Examples:
-  ugudu daemon                    # Start daemon (foreground)
-  ugudu daemon --tcp :8080        # Also listen on port 8080
+  ugudu daemon                    # Start daemon with web UI on :9741
+  ugudu daemon --tcp :3000        # Use custom port
   ugudu daemon --data ~/.ugudu    # Custom data directory`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if dataDir == "" {
@@ -160,9 +160,7 @@ Examples:
 			fmt.Println()
 			fmt.Printf("Daemon starting...\n")
 			fmt.Printf("  Socket:  %s\n", d.GetSocketPath())
-			if tcpAddr != "" {
-				fmt.Printf("  HTTP:    http://%s\n", tcpAddr)
-			}
+			fmt.Printf("  Web UI:  http://localhost%s\n", tcpAddr)
 			fmt.Printf("  Data:    %s\n", dataDir)
 			fmt.Println()
 			fmt.Println("Press Ctrl+C to stop.")
@@ -178,7 +176,7 @@ Examples:
 	defaultDataDir := filepath.Join(home, ".ugudu", "data")
 
 	cmd.Flags().StringVar(&dataDir, "data", defaultDataDir, "data directory")
-	cmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP address for HTTP access (e.g., :8080)")
+	cmd.Flags().StringVar(&tcpAddr, "tcp", ":9741", "TCP address for HTTP/Web UI (default :9741)")
 	cmd.Flags().BoolVar(&foreground, "foreground", true, "run in foreground (default)")
 
 	return cmd

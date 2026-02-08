@@ -1,8 +1,10 @@
-.PHONY: build install uninstall clean tidy test test-coverage dev run daemon release release-dry-run desktop desktop-dev
+.PHONY: build install uninstall clean tidy test test-coverage dev run daemon release release-dry-run ui
 
 BINARY := ugudu
 BUILD_DIR := bin
 DIST_DIR := dist
+WEB_DIR := web
+UI_DIR := internal/api/ui
 INSTALL_PATH := /usr/local/bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
@@ -10,12 +12,23 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 # Platforms for cross-compilation
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-# Desktop app directory
-DESKTOP_DIR := desktop
+# Build the web UI
+ui:
+	@echo "Building web UI..."
+	@cd $(WEB_DIR) && npm install && npm run build
+	@rm -rf $(UI_DIR)
+	@cp -r $(WEB_DIR)/dist $(UI_DIR)
+	@echo "UI built and copied to $(UI_DIR)"
 
-# Build the binary
-build:
+# Build the binary (includes UI)
+build: ui
 	@echo "Building $(BINARY)..."
+	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/ugudu
+	@echo "Built $(BUILD_DIR)/$(BINARY)"
+
+# Build binary only (skip UI rebuild - for quick iteration)
+build-fast:
+	@echo "Building $(BINARY) (skip UI)..."
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/ugudu
 	@echo "Built $(BUILD_DIR)/$(BINARY)"
 
@@ -39,6 +52,8 @@ dev: install
 # Clean build artifacts
 clean:
 	@rm -rf $(BUILD_DIR)
+	@rm -rf $(WEB_DIR)/dist
+	@rm -rf $(WEB_DIR)/node_modules
 	@echo "Cleaned."
 
 # Tidy go modules
@@ -69,8 +84,13 @@ daemon: build
 run: build
 	@./$(BUILD_DIR)/$(BINARY) $(ARGS)
 
+# Web UI development server
+ui-dev:
+	@echo "Starting web UI dev server..."
+	@cd $(WEB_DIR) && npm install && npm run dev
+
 # Release: build all platform binaries
-release:
+release: ui
 	@echo "Building release $(VERSION) for all platforms..."
 	@rm -rf $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)
@@ -111,27 +131,13 @@ tag:
 	@git push origin $(TAG)
 	@echo "Tag $(TAG) pushed. GitHub Actions will create the release."
 
-# Desktop app development
-desktop-dev:
-	@echo "Starting desktop app in dev mode..."
-	@cd $(DESKTOP_DIR) && cargo tauri dev
-
-# Desktop app build (current platform)
-desktop:
-	@echo "Building desktop app..."
-	@cd $(DESKTOP_DIR) && cargo tauri build
-	@echo "Desktop app built in $(DESKTOP_DIR)/src-tauri/target/release/bundle/"
-
-# Full release with desktop
-release-full: release desktop
-	@echo "Full release complete!"
-
 # Show help
 help:
 	@echo "Ugudu Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build          Build the binary to ./bin/ugudu"
+	@echo "  make build          Build the binary (includes web UI)"
+	@echo "  make build-fast     Build binary only (skip UI rebuild)"
 	@echo "  make install        Build and install to /usr/local/bin (requires sudo)"
 	@echo "  make uninstall      Remove from /usr/local/bin"
 	@echo "  make dev            Build and install (for quick iteration)"
@@ -141,19 +147,16 @@ help:
 	@echo "  make clean          Remove build artifacts"
 	@echo "  make tidy           Tidy go modules"
 	@echo ""
-	@echo "Desktop App:"
-	@echo "  make desktop-dev    Run desktop app in development mode"
-	@echo "  make desktop        Build desktop app for current platform"
+	@echo "Web UI:"
+	@echo "  make ui             Build web UI"
+	@echo "  make ui-dev         Run web UI in development mode"
 	@echo ""
 	@echo "Release:"
-	@echo "  make release        Build CLI binaries for all platforms"
-	@echo "  make release-full   Build CLI + desktop app"
+	@echo "  make release        Build binaries for all platforms"
 	@echo "  make release-dry-run Show what would be built"
 	@echo "  make tag TAG=v1.0.0 Create and push a git tag"
 	@echo ""
-	@echo "Distribution:"
-	@echo "  npm:        npm install -g @arcslash/ugudu"
-	@echo "  Homebrew:   brew install arcslash/tap/ugudu"
-	@echo "  Chocolatey: choco install ugudu"
+	@echo "Install/Upgrade:"
+	@echo "  curl -fsSL https://raw.githubusercontent.com/arcslash/ugudu/main/install.sh | bash"
 	@echo ""
-	@echo "After 'make install', use 'ugudu' directly from anywhere."
+	@echo "After 'make install', run 'ugudu daemon' and open http://localhost:9741"

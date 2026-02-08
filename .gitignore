@@ -14,6 +14,7 @@ bin/
 # Output of the go coverage tool
 *.out
 coverage.html
+coverage.txt
 
 # Data and databases
 data/
@@ -49,13 +50,17 @@ dist/
 release/
 build/
 
-# Tauri/Rust (desktop app)
-desktop/src-tauri/target/
-desktop/src-tauri/Cargo.lock
+# Web frontend
+web/node_modules/
+web/dist/
 
-# npm (for distribution scripts)
-node_modules/
-package-lock.json
+# Built UI (generated from web/dist during build)
+internal/api/ui/assets/
+internal/api/ui/index.html
+internal/api/ui/*.svg
+
+# npm (root level for distribution scripts)
+/node_modules/
 
 # Temporary files
 *.tmp
@@ -73,5 +78,5 @@ logs/
 # Chocolatey artifacts
 chocolatey/*.nupkg
 
-# Local Claude settings (keep .claude/settings.json if exists)
+# Local Claude settings
 .claude/projects/

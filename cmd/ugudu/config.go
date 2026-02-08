@@ -135,13 +135,13 @@ This will guide you through setting up:
 			fmt.Println()
 
 			// Daemon port
-			fmt.Print("Daemon HTTP port (default: 8080): ")
+			fmt.Print("Daemon HTTP port (default: 9741): ")
 			port, _ := reader.ReadString('\n')
 			port = strings.TrimSpace(port)
 			if port != "" {
 				cfg.Daemon.TCPAddr = ":" + port
 			} else {
-				cfg.Daemon.TCPAddr = ":8080"
+				cfg.Daemon.TCPAddr = ":9741"
 			}
 
 			// Save config

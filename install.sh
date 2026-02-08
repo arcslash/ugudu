@@ -115,7 +115,7 @@ verify_installation() {
         echo ""
         echo "Quick start:"
         echo "  1. Start the daemon: ${BINARY_NAME} daemon"
-        echo "  2. Open web UI: http://localhost:8080"
+        echo "  2. Open web UI: http://localhost:9741"
         echo ""
     else
         echo -e "${YELLOW}Warning: ${BINARY_NAME} may not be in your PATH${NC}"

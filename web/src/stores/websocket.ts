@@ -1,10 +1,11 @@
 // WebSocket store for real-time updates
 
 import { writable, get } from 'svelte/store';
-import { teamMembers, addMessage, currentTeamName, wasRecentlyAdded } from './app';
+import { teamMembers, addMessage, currentTeamName, wasRecentlyAdded, teams, specs, currentTeam, currentTeamName as currentTeamNameStore } from './app';
+import { getTeams, getTeamMembers, getSpecs } from '../lib/api';
 
 export interface WSEvent {
-  type: 'member_status' | 'activity' | 'task_update' | 'chat';
+  type: 'member_status' | 'activity' | 'task_update' | 'chat' | 'team_update' | 'spec_update' | 'settings_update';
   team: string;
   member_id?: string;
   status?: string;
@@ -90,6 +91,7 @@ function scheduleReconnect() {
 
 function handleWSEvent(event: WSEvent) {
   wsLastEvent.set(event);
+  console.log('[WS] Event received:', event.type, event.team || '', event.message || '');
 
   switch (event.type) {
     case 'member_status':
@@ -103,6 +105,16 @@ function handleWSEvent(event: WSEvent) {
       break;
     case 'chat':
       handleChat(event);
+      break;
+    case 'team_update':
+      handleTeamUpdate(event);
+      break;
+    case 'spec_update':
+      handleSpecUpdate(event);
+      break;
+    case 'settings_update':
+      // Could refresh settings here if needed
+      console.log('[WS] Settings updated:', event.message);
       break;
   }
 }
@@ -159,6 +171,72 @@ function handleChat(event: WSEvent) {
     type: msgType,
     role: memberId
   });
+}
+
+async function handleTeamUpdate(event: WSEvent) {
+  const action = event.message; // created, deleted, started, stopped
+  const teamName = event.team;
+
+  console.log('[WS] Team update:', action, teamName);
+
+  switch (action) {
+    case 'created':
+      // Refresh full team list to get new team details
+      try {
+        const teamList = await getTeams();
+        teams.set(teamList);
+      } catch (e) {
+        console.error('Failed to refresh teams:', e);
+      }
+      break;
+
+    case 'deleted':
+      // Remove team from list
+      teams.update(list => list.filter(t => t.name !== teamName));
+      // Clear selection if this team was selected
+      if (get(currentTeamName) === teamName) {
+        currentTeamNameStore.set(null);
+        currentTeam.set(null);
+        teamMembers.set([]);
+      }
+      break;
+
+    case 'started':
+    case 'stopped':
+      // Update team status
+      teams.update(list =>
+        list.map(t => t.name === teamName
+          ? { ...t, status: action === 'started' ? 'running' as const : 'stopped' as const }
+          : t
+        )
+      );
+      break;
+  }
+}
+
+async function handleSpecUpdate(event: WSEvent) {
+  const action = event.message; // created, updated, deleted
+  const specName = event.team; // Using team field for spec name
+
+  console.log('[WS] Spec update:', action, specName);
+
+  switch (action) {
+    case 'created':
+    case 'updated':
+      // Refresh full spec list
+      try {
+        const specList = await getSpecs();
+        specs.set(specList);
+      } catch (e) {
+        console.error('Failed to refresh specs:', e);
+      }
+      break;
+
+    case 'deleted':
+      // Remove spec from list
+      specs.update(list => list.filter(s => s.name !== specName));
+      break;
+  }
 }
 
 export function disconnectWebSocket() {

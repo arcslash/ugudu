@@ -158,7 +158,7 @@ func resolveSafePath(path string) string {
 
 	// Get projects directory
 	homeDir, _ := os.UserHomeDir()
-	projectsDir := filepath.Join(homeDir, "ugudu_projects", "default")
+	projectsDir := filepath.Join(homeDir, "ugudu_projects")
 
 	// Create the projects dir if it doesn't exist
 	os.MkdirAll(projectsDir, 0755)

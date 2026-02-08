@@ -81,10 +81,19 @@ func (h *WSHub) Run() {
 // Broadcast sends an event to all connected clients
 func (h *WSHub) Broadcast(event WSEvent) {
 	event.Timestamp = time.Now()
+	h.mu.RLock()
+	clientCount := len(h.clients)
+	h.mu.RUnlock()
+
 	select {
 	case h.broadcast <- event:
+		// Debug: log broadcast
+		if event.Type == "chat" || event.Type == "team_update" {
+			println("[WS] Broadcasting", event.Type, "to", clientCount, "clients, team:", event.Team)
+		}
 	default:
 		// Channel full, skip
+		println("[WS] WARNING: broadcast channel full, skipping", event.Type)
 	}
 }
 
@@ -121,6 +130,35 @@ func (h *WSHub) BroadcastChat(team, memberID, msgType, from, content string) {
 			"from":     from,
 			"msg_type": msgType, // "user" or "agent"
 		},
+	})
+}
+
+// BroadcastTeamUpdate sends a team update event (created, deleted, started, stopped)
+func (h *WSHub) BroadcastTeamUpdate(action, teamName string, data interface{}) {
+	h.Broadcast(WSEvent{
+		Type:    "team_update",
+		Team:    teamName,
+		Message: action,
+		Data:    data,
+	})
+}
+
+// BroadcastSpecUpdate sends a spec update event (created, updated, deleted)
+func (h *WSHub) BroadcastSpecUpdate(action, specName string, data interface{}) {
+	h.Broadcast(WSEvent{
+		Type:    "spec_update",
+		Team:    specName, // Using team field for spec name
+		Message: action,
+		Data:    data,
+	})
+}
+
+// BroadcastSettingsUpdate sends a settings/provider update event
+func (h *WSHub) BroadcastSettingsUpdate(section string, data interface{}) {
+	h.Broadcast(WSEvent{
+		Type:    "settings_update",
+		Message: section,
+		Data:    data,
 	})
 }
 

@@ -369,6 +369,12 @@ func (s *Server) handleSpecs(w http.ResponseWriter, r *http.Request) {
 
 		s.json(w, http.StatusOK, map[string]interface{}{"status": "ok", "path": specPath})
 
+		// Broadcast spec creation
+		s.wsHub.BroadcastSpecUpdate("created", req.Name, map[string]interface{}{
+			"name": req.Name,
+			"path": specPath,
+		})
+
 	default:
 		s.error(w, http.StatusMethodNotAllowed, "GET or POST required")
 	}
@@ -431,6 +437,7 @@ func (s *Server) handleSpecByName(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.json(w, http.StatusOK, map[string]interface{}{"status": "deleted"})
+		s.wsHub.BroadcastSpecUpdate("deleted", name, nil)
 
 	default:
 		s.error(w, http.StatusMethodNotAllowed, "GET or DELETE required")
@@ -475,10 +482,14 @@ func (s *Server) handleTeams(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.json(w, http.StatusCreated, map[string]interface{}{
+		result := map[string]interface{}{
 			"name":    t.Name,
 			"members": len(t.Members),
-		})
+		}
+		s.json(w, http.StatusCreated, result)
+
+		// Broadcast team creation
+		s.wsHub.BroadcastTeamUpdate("created", t.Name, result)
 
 	default:
 		s.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -508,6 +519,7 @@ func (s *Server) handleTeamByName(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.json(w, http.StatusOK, map[string]interface{}{"status": "started"})
+			s.wsHub.BroadcastTeamUpdate("started", teamName, nil)
 			return
 
 		case "stop":
@@ -520,6 +532,7 @@ func (s *Server) handleTeamByName(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.json(w, http.StatusOK, map[string]interface{}{"status": "stopped"})
+			s.wsHub.BroadcastTeamUpdate("stopped", teamName, nil)
 			return
 
 		case "members":
@@ -579,6 +592,7 @@ func (s *Server) handleTeamByName(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.json(w, http.StatusOK, map[string]interface{}{"status": "deleted"})
+		s.wsHub.BroadcastTeamUpdate("deleted", teamName, nil)
 
 	default:
 		s.error(w, http.StatusMethodNotAllowed, "method not allowed")

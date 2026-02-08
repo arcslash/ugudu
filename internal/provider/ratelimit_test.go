@@ -2,6 +2,7 @@ package provider
 
 import (
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -60,15 +61,15 @@ func TestRateLimitState_ResumeTime(t *testing.T) {
 func TestRateLimitState_Callbacks(t *testing.T) {
 	state := NewRateLimitState()
 
-	rateLimitedCalled := false
-	resumeCalled := false
+	var rateLimitedCalled atomic.Bool
+	var resumeCalled atomic.Bool
 
 	state.OnRateLimited(func(info RateLimitInfo) {
-		rateLimitedCalled = true
+		rateLimitedCalled.Store(true)
 	})
 
 	state.OnResume(func() {
-		resumeCalled = true
+		resumeCalled.Store(true)
 	})
 
 	// Trigger rate limit
@@ -79,14 +80,14 @@ func TestRateLimitState_Callbacks(t *testing.T) {
 
 	// Wait for callback
 	time.Sleep(50 * time.Millisecond)
-	if !rateLimitedCalled {
+	if !rateLimitedCalled.Load() {
 		t.Error("Rate limited callback should have been called")
 	}
 
 	// Clear and check resume callback
 	state.ClearRateLimit()
 	time.Sleep(50 * time.Millisecond)
-	if !resumeCalled {
+	if !resumeCalled.Load() {
 		t.Error("Resume callback should have been called")
 	}
 }

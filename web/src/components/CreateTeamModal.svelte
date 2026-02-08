@@ -50,6 +50,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="modal-backdrop" on:click={handleBackdropClick}>
   <div class="modal">
     <div class="modal-header">

@@ -114,7 +114,7 @@ function handleMemberStatus(event: WSEvent) {
       if (m.role === event.member_id || m.id === event.member_id) {
         return {
           ...m,
-          status: event.status as 'idle' | 'busy' | 'error',
+          status: event.status as 'idle' | 'busy' | 'working' | 'thinking' | 'error',
           statusMessage: event.message
         };
       }

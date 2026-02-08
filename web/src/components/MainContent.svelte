@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { currentView, currentTeamName, currentTeam, selectedMember, teamMembers, chatHistory, getChatKey, addMessage, specs, editingSpec, showSpecEditorModal } from '../stores/app';
   import { sendMessage, deleteSpec, getSettings, saveSettings, type SettingsResponse } from '../lib/api';
+  import { activityFeed } from '../stores/websocket';
   import type { ChatMessage } from '../types/api';
 
   // Settings state
@@ -127,6 +128,15 @@
   $: chatKey = $currentTeamName && $selectedMember ? getChatKey($currentTeamName, $selectedMember.id) : null;
   $: messages = chatKey ? ($chatHistory[chatKey] || []) : [];
   $: canChat = $selectedMember?.client_facing === true;
+
+  // Filter activity feed for selected member (or all if PM is selected)
+  $: memberActivity = $activityFeed.filter(event => {
+    if (!$currentTeamName || !$selectedMember) return false;
+    if (event.team !== $currentTeamName) return false;
+    // Show all activity for PM, or just this member's activity
+    if ($selectedMember.role === 'pm') return true;
+    return event.member_id === $selectedMember.role || event.member_id === $selectedMember.id;
+  });
 
   async function handleSend() {
     if (!messageInput.trim() || !$currentTeamName || !$selectedMember || sending) return;
@@ -436,13 +446,29 @@
                 <div class="message-content">{@html renderMarkdown(msg.content)}</div>
               </div>
             {:else}
-              <div class="empty-chat">
-                {#if canChat}
-                  <p>Start a conversation with {$selectedMember.name}</p>
-                {:else}
-                  <p>Activity log for {$selectedMember.name} will appear here</p>
-                {/if}
-              </div>
+              {#if !canChat && memberActivity.length > 0}
+                <!-- Show activity feed for non-client-facing members -->
+                {#each memberActivity as activity}
+                  <div class="message agent activity-item">
+                    <div class="message-header">
+                      <span class="message-from">{activity.member_id || 'System'}</span>
+                      <span class="message-time">
+                        {new Date(activity.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div class="message-content">{activity.message}</div>
+                  </div>
+                {/each}
+              {:else}
+                <div class="empty-chat">
+                  {#if canChat}
+                    <p>Start a conversation with {$selectedMember.name}</p>
+                  {:else}
+                    <p>Activity log for {$selectedMember.name} will appear here</p>
+                    <p class="hint">Activity is shown when agents are working on tasks</p>
+                  {/if}
+                </div>
+              {/if}
             {/each}
           </div>
 
@@ -940,9 +966,21 @@
   .empty-chat {
     flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
+    text-align: center;
+  }
+
+  .empty-chat .hint {
+    font-size: 12px;
+    margin-top: 8px;
+    opacity: 0.7;
+  }
+
+  .activity-item {
+    border-left: 3px solid var(--accent);
   }
 
   .chat-input-container {

@@ -300,9 +300,13 @@ func (m *Member) executeToolCalls(ctx context.Context, toolCalls []provider.Tool
 
 		m.logger.Info("executing tool", "tool", tc.Name, "args", args)
 
+		// Notify activity about tool execution
+		m.Team.NotifyActivity(m.ID, "tool_call", fmt.Sprintf("Using tool: %s", tc.Name))
+
 		result, err := m.toolRegistry.Execute(ctx, tc.Name, args)
 		if err != nil {
 			m.logger.Error("tool execution failed", "tool", tc.Name, "error", err)
+			m.Team.NotifyActivity(m.ID, "tool_error", fmt.Sprintf("Tool %s failed: %s", tc.Name, truncateMessage(err.Error(), 50)))
 			results = append(results, provider.Message{
 				Role:       "tool",
 				Content:    fmt.Sprintf("Error: %v", err),
@@ -556,6 +560,9 @@ func (m *Member) handleTaskAssignment(msg Message) {
 	m.mu.Unlock()
 
 	m.logger.Info("working on task", "task_id", task.ID)
+
+	// Notify activity
+	m.Team.NotifyActivity(m.ID, "task_started", fmt.Sprintf("Started working on: %s", truncateMessage(task.Content, 100)))
 
 	// Build context with task details and history
 	messages := []provider.Message{
@@ -837,10 +844,19 @@ func (m *Member) parseResponse(response, originalRequest string) responseAction 
 		}
 	}
 
-	// Check for client question
-	if idx := indexOf(response, "ASK CLIENT:"); idx >= 0 {
-		content := response[idx+11:]
-		return responseAction{Type: "question", Content: trim(content)}
+	// Check for ASK <role>: pattern (inter-agent communication)
+	if idx := indexOf(response, "ASK "); idx >= 0 {
+		rest := response[idx+4:]
+		if colonIdx := indexOf(rest, ":"); colonIdx > 0 {
+			target := trim(rest[:colonIdx])
+			content := trim(rest[colonIdx+1:])
+			// Check if it's asking the client or another role
+			if target == "CLIENT" || target == "client" {
+				return responseAction{Type: "question", Content: content}
+			}
+			// It's asking another team member - treat as delegation
+			return responseAction{Type: "delegate", Target: target, Content: content}
+		}
 	}
 
 	// Check for completion
@@ -939,6 +955,10 @@ func (m *Member) handleDelegation(action responseAction, originalMsg Message) {
 
 	m.logger.Info("delegated task, waiting for result", "to", action.Target, "task_id", task.ID)
 
+	// Notify about the delegation
+	m.Team.NotifyActivity(m.ID, "delegation", fmt.Sprintf("Delegated to %s: %s", target.DisplayName(), truncateMessage(action.Content, 100)))
+	m.Team.NotifyActivity(target.ID, "task_received", fmt.Sprintf("Received task from %s", m.DisplayName()))
+
 	// Wait for the delegated task to complete
 	select {
 	case <-m.ctx.Done():
@@ -947,14 +967,59 @@ func (m *Member) handleDelegation(action responseAction, originalMsg Message) {
 	case result := <-task.ResultChan:
 		if result != nil {
 			if result.Success {
-				// Forward the result to the client
-				m.respondToClient(result.Content)
+				// Process the result - let the member decide what to do next
+				m.processTaskResult(result.Content, target.RoleName, originalMsg)
 			} else {
 				m.respondToClient(fmt.Sprintf("Task failed: %s", result.Error))
 			}
 		} else {
 			m.respondToClient("Task completed without result")
 		}
+	}
+}
+
+// processTaskResult handles the result from a delegated task
+// The member can decide to delegate further, respond to client, etc.
+func (m *Member) processTaskResult(result, fromRole string, originalMsg Message) {
+	m.setStatus(MemberWorking)
+	defer m.setStatus(MemberIdle)
+
+	// Build context with the delegation result
+	messages := []provider.Message{
+		{Role: "system", Content: m.buildSystemPrompt()},
+	}
+
+	// Add conversation history
+	messages = append(messages, m.getContextMessages()...)
+
+	// Add the result as context
+	prompt := fmt.Sprintf("The %s completed their task and returned:\n\n%s\n\nBased on this, decide your next action. You can:\n1. DELEGATE TO another role for the next task\n2. Send a brief friendly update to the client (keep it short, no technical details)\n\nRemember: Keep client messages to 1-2 sentences. Technical details stay internal.", fromRole, result)
+	messages = append(messages, provider.Message{Role: "user", Content: prompt})
+
+	// Get response from LLM
+	resp, err := m.Provider.Chat(m.ctx, &provider.ChatRequest{
+		Model:    m.Role.Model.Model,
+		Messages: messages,
+	})
+
+	if err != nil {
+		m.logger.Error("failed to process task result", "error", err)
+		m.respondToClient("Working on it!")
+		return
+	}
+
+	// Parse and handle the response
+	action := m.parseResponse(resp.Content, prompt)
+
+	switch action.Type {
+	case "delegate":
+		m.handleDelegation(action, originalMsg)
+	case "parallel_delegate":
+		m.handleParallelDelegation(action, originalMsg)
+	case "question":
+		m.askClient(action.Content)
+	default:
+		m.respondToClient(action.Content)
 	}
 }
 
@@ -1171,6 +1236,9 @@ func (m *Member) completeTask(task *Task, result string) {
 		Timestamp: time.Now(),
 	})
 
+	// Notify activity
+	m.Team.NotifyActivity(m.ID, "task_completed", fmt.Sprintf("Completed task: %s", truncateMessage(result, 100)))
+
 	m.logger.Info("task completed", "task_id", task.ID)
 }
 
@@ -1214,6 +1282,9 @@ func (m *Member) setStatus(status MemberStatus) {
 	m.mu.Lock()
 	m.Status = status
 	m.mu.Unlock()
+
+	// Notify status change
+	m.Team.NotifyActivity(m.ID, "status_change", string(status))
 }
 
 func (m *Member) sendToTeam(msg Message) {
@@ -1253,4 +1324,11 @@ func trim(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+func truncateMessage(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

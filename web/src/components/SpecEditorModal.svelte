@@ -32,52 +32,95 @@
       title: 'Project Manager',
       key: 'pm',
       names: ['Sarah', 'Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey'],
-      basePersona: 'You are {name}, a friendly and approachable Project Manager. You coordinate the team and communicate with clients in a warm, conversational tone.',
+      basePersona: `You are {name}, a friendly PM. Keep client messages SHORT (1-2 sentences max).
+
+WORKFLOW:
+1. Get client request
+2. DELEGATE TO ba: to break it into smaller tasks
+3. For each task, DELEGATE TO engineer: with detailed spec
+4. Only ask client when BA/engineer need client-specific info
+
+RESPONSE FORMAT - Pick ONE:
+1. DELEGATE TO ba: [request to analyze and break down]
+2. DELEGATE TO engineer: [detailed technical spec]
+3. DELEGATE TO qa: [test scenarios]
+4. Brief friendly message to client (ONLY when necessary)
+
+RULES:
+- First delegate to BA for task breakdown on complex requests
+- Keep ALL technical details internal - never show to client
+- Only message client for: greetings, clarifying questions, final delivery
+- Short friendly responses only`,
       traits: [
-        'You love breaking down complex problems into manageable tasks.',
-        'You always celebrate team wins, no matter how small.',
-        'You have a knack for keeping everyone motivated.',
-        'You prefer action over endless planning.',
-        'You believe in transparent communication.'
+        'You coordinate between BA and engineer.',
+        'You break complex work into smaller tasks.',
+        'You shield clients from technical details.',
+        'You keep client messages brief.',
+        'You delegate before doing.'
       ]
     },
     engineer: {
       title: 'Software Engineer',
       key: 'engineer',
       names: ['Mike', 'Julia', 'Sam', 'Dev', 'Riley', 'Quinn'],
-      basePersona: 'You are {name}, a skilled Software Engineer. You write clean, efficient code and use your tools to actually implement features.',
+      basePersona: `You are {name}, a skilled Software Engineer. You implement features using your tools.
+
+WORKFLOW:
+- Work on ONE task at a time
+- If unclear, ASK ba or pm for clarification (not client)
+- Use your tools to write actual code
+- Report completion to pm when done
+
+ASKING FOR HELP:
+ASK pm: [question about priorities or scope]
+ASK ba: [question about requirements or specs]
+
+Only ask client through pm if absolutely necessary.`,
       traits: [
-        'You love elegant solutions to complex problems.',
-        'You always test your code before committing.',
-        'You write code that other developers can understand.',
-        'You prefer pragmatic solutions over perfect ones.',
-        'You document the non-obvious parts of your code.'
+        'You work on one task at a time.',
+        'You ask BA for requirement clarity.',
+        'You write clean, working code.',
+        'You use tools to implement features.',
+        'You report when tasks complete.'
       ]
     },
     qa: {
       title: 'QA Engineer',
       key: 'qa',
       names: ['Chris', 'Pat', 'Jamie', 'Drew', 'Avery', 'Blake'],
-      basePersona: 'You are {name}, a detail-oriented QA Engineer. You find bugs, verify fixes, and ensure quality.',
+      basePersona: `You are {name}, a QA Engineer. You test features and report issues.
+
+WORKFLOW:
+- Review code/features for quality
+- Report bugs to engineer
+- Verify fixes work correctly
+- Ask BA for expected behavior if unclear`,
       traits: [
-        'You have an eye for edge cases others miss.',
-        'You think like a user, not just a tester.',
-        'You write clear bug reports that developers love.',
-        'You balance thoroughness with efficiency.',
-        'You celebrate when you break things.'
+        'You catch edge cases others miss.',
+        'You write clear bug reports.',
+        'You verify fixes thoroughly.',
+        'You balance speed with quality.',
+        'You ask BA when behavior is unclear.'
       ]
     },
     ba: {
       title: 'Business Analyst',
       key: 'ba',
       names: ['Robin', 'Dana', 'Lee', 'Sage', 'River', 'Phoenix'],
-      basePersona: 'You are {name}, a Business Analyst. You translate business needs into clear requirements.',
+      basePersona: `You are {name}, a Business Analyst. You break down requests into clear tasks.
+
+WORKFLOW:
+- Receive requests from PM
+- Break into smaller, actionable tasks
+- Define acceptance criteria for each
+- Answer engineer/QA questions about requirements
+- Only escalate to PM if client input truly needed`,
       traits: [
-        'You ask the questions others forget to ask.',
-        'You love creating clear documentation.',
-        'You bridge the gap between business and tech.',
-        'You spot inconsistencies in requirements.',
-        'You keep the big picture in mind.'
+        'You break big requests into small tasks.',
+        'You write clear acceptance criteria.',
+        'You answer technical team questions.',
+        'You only escalate when necessary.',
+        'You keep requirements organized.'
       ]
     },
     designer: {
@@ -97,22 +140,43 @@
 
   const modelOptions = [
     { provider: 'openrouter', models: [
+      'anthropic/claude-sonnet-4',
       'anthropic/claude-3.5-sonnet',
-      'anthropic/claude-3-opus',
-      'google/gemini-pro-1.5',
-      'google/gemini-flash-1.5',
-      'deepseek/deepseek-chat',
+      'anthropic/claude-3.5-haiku',
+      'google/gemini-2.0-flash-001',
+      'google/gemini-2.5-pro-preview',
+      'google/gemini-2.5-flash-preview',
+      'deepseek/deepseek-chat-v3-0324',
       'openai/gpt-4o',
+      'openai/gpt-4o-mini',
+      'meta-llama/llama-3.3-70b-instruct',
+      'mistralai/mistral-large-2411',
     ]},
     { provider: 'anthropic', models: [
+      'claude-sonnet-4-20250514',
       'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022',
       'claude-3-opus-20240229',
-      'claude-3-haiku-20240307',
     ]},
     { provider: 'openai', models: [
-      'gpt-4-turbo',
       'gpt-4o',
       'gpt-4o-mini',
+      'gpt-4-turbo',
+      'o1',
+      'o1-mini',
+    ]},
+    { provider: 'groq', models: [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'mixtral-8x7b-32768',
+      'gemma2-9b-it',
+    ]},
+    { provider: 'ollama', models: [
+      'llama3.2',
+      'llama3.1',
+      'mistral',
+      'codellama',
+      'deepseek-coder-v2',
     ]},
   ];
 
@@ -334,12 +398,40 @@
 
     try {
       const rolesObj: Record<string, any> = {};
+      // Collect all role types for delegation purposes
+      const allRoleTypes = roles.map(r => r.roleType).filter(t => t.trim());
+
       for (const role of roles) {
         if (!role.roleType.trim()) continue;
+
+        // Set can_delegate based on role type for proper team communication
+        let canDelegate: string[] | undefined;
+        switch (role.roleType) {
+          case 'pm':
+            // PM can delegate to all team members
+            canDelegate = allRoleTypes.filter(t => t !== 'pm');
+            break;
+          case 'engineer':
+            // Engineer can ask BA and PM for clarification
+            canDelegate = allRoleTypes.filter(t => t === 'ba' || t === 'pm');
+            break;
+          case 'qa':
+            // QA can report to engineer and ask BA
+            canDelegate = allRoleTypes.filter(t => t === 'engineer' || t === 'ba');
+            break;
+          case 'ba':
+            // BA can escalate to PM
+            canDelegate = allRoleTypes.filter(t => t === 'pm');
+            break;
+          default:
+            canDelegate = undefined;
+        }
+
         rolesObj[role.roleType] = {
           title: getRoleTitle(role.roleType),
           ...(role.name && { name: role.name }),
           ...(role.persona && { persona: role.persona }),
+          ...(canDelegate && canDelegate.length > 0 && { can_delegate: canDelegate }),
           ...(role.useCustomModel && role.provider && { provider: role.provider }),
           ...(role.useCustomModel && role.model && { model: role.model }),
         };
@@ -440,6 +532,12 @@
               </option>
               <option value="openai" disabled={!configuredProviders.has('openai')}>
                 OpenAI {configuredProviders.has('openai') ? '' : '(not configured)'}
+              </option>
+              <option value="groq" disabled={!configuredProviders.has('groq')}>
+                Groq {configuredProviders.has('groq') ? '' : '(not configured)'}
+              </option>
+              <option value="ollama" disabled={!configuredProviders.has('ollama')}>
+                Ollama {configuredProviders.has('ollama') ? '' : '(not configured)'}
               </option>
             </select>
             <select bind:value={defaultModel} disabled={saving}>
@@ -549,6 +647,12 @@
                           </option>
                           <option value="openai" disabled={!configuredProviders.has('openai')}>
                             OpenAI {configuredProviders.has('openai') ? '' : '(not configured)'}
+                          </option>
+                          <option value="groq" disabled={!configuredProviders.has('groq')}>
+                            Groq {configuredProviders.has('groq') ? '' : '(not configured)'}
+                          </option>
+                          <option value="ollama" disabled={!configuredProviders.has('ollama')}>
+                            Ollama {configuredProviders.has('ollama') ? '' : '(not configured)'}
                           </option>
                         </select>
                         <select bind:value={role.model} disabled={saving}>

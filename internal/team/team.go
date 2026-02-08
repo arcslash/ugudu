@@ -24,6 +24,8 @@ type PersistenceCallbacks struct {
 	CreateConversation func(teamName string) (string, error)
 	// GetActiveConversation returns the active conversation ID
 	GetActiveConversation func(teamName string) (string, error)
+	// OnActivity is called when there's team activity (delegation, task updates, etc.)
+	OnActivity func(teamName, memberID, activityType, message string)
 }
 
 // ContextMessage represents a message in conversation context
@@ -514,6 +516,13 @@ func (t *Team) SaveMemberContext(memberID, role, content string, sequence int) {
 
 	if err := t.persistence.SaveContext(t.Name, memberID, t.conversationID, role, content, sequence); err != nil {
 		t.logger.Warn("failed to save context", "member", memberID, "error", err)
+	}
+}
+
+// NotifyActivity broadcasts an activity event
+func (t *Team) NotifyActivity(memberID, activityType, message string) {
+	if t.persistence != nil && t.persistence.OnActivity != nil {
+		t.persistence.OnActivity(t.Name, memberID, activityType, message)
 	}
 }
 

@@ -78,13 +78,14 @@ Specs are blueprints that define your team structure:
 
 1. Click **Specs** in the sidebar
 2. Click **+ New Spec**
-3. Enter a team name (e.g., "my-dev-team")
-4. Add team members using **+ Add Member** dropdown:
+3. Enter a spec name (e.g., "my-dev-team")
+4. Choose a default AI provider and model
+5. Add roles using **+ Add Role** dropdown:
    - Select role type (PM, Engineer, QA, etc.)
    - Names and personas are auto-generated
    - Check **Client Facing** for roles that talk to you (usually PM)
-   - Click **Advanced** to customize persona or model per role
-5. Click **Create Team**
+   - Click **Advanced** to customize persona or use a different model per role
+6. Click **Create Spec**
 
 #### 3. Create a Team from Spec
 

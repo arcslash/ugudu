@@ -125,10 +125,8 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return nil, fmt.Errorf("content is required")
 	}
 
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
-	}
+	// Resolve path - use projects dir for relative paths
+	absPath := resolveSafePath(path)
 
 	// Create parent directories if needed
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
@@ -145,6 +143,34 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 	}, nil
 }
 
+// resolveSafePath ensures paths are within the projects directory
+func resolveSafePath(path string) string {
+	// If it's already an absolute path within the home dir, allow it
+	if filepath.IsAbs(path) {
+		homeDir, _ := os.UserHomeDir()
+		// Only allow paths under home directory
+		if strings.HasPrefix(path, homeDir) {
+			return path
+		}
+		// Otherwise, strip leading slash and treat as relative
+		path = strings.TrimPrefix(path, "/")
+	}
+
+	// Get projects directory
+	homeDir, _ := os.UserHomeDir()
+	projectsDir := filepath.Join(homeDir, "ugudu_projects", "default")
+
+	// Create the projects dir if it doesn't exist
+	os.MkdirAll(projectsDir, 0755)
+
+	// Clean the path to prevent directory traversal
+	cleanPath := filepath.Clean(path)
+	cleanPath = strings.TrimPrefix(cleanPath, "../")
+	cleanPath = strings.TrimPrefix(cleanPath, "..")
+
+	return filepath.Join(projectsDir, cleanPath)
+}
+
 // EditFileTool edits a file with search/replace
 type EditFileTool struct{}
 
@@ -152,7 +178,7 @@ func (t *EditFileTool) Name() string        { return "edit_file" }
 func (t *EditFileTool) Description() string { return "Edit a file by replacing text" }
 
 func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-	path, ok := args["path"].(string)
+	pathArg, ok := args["path"].(string)
 	if !ok {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -167,10 +193,8 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return nil, fmt.Errorf("new_text is required")
 	}
 
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
-	}
+	// Resolve path to safe location
+	absPath := resolveSafePath(pathArg)
 
 	content, err := os.ReadFile(absPath)
 	if err != nil {
@@ -205,9 +229,12 @@ func (t *ListFilesTool) Execute(ctx context.Context, args map[string]interface{}
 		path = "."
 	}
 
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
+	// Use safe path resolution for relative paths
+	var absPath string
+	if path == "." || !filepath.IsAbs(path) {
+		absPath = resolveSafePath(path)
+	} else {
+		absPath = path
 	}
 
 	entries, err := os.ReadDir(absPath)
@@ -259,9 +286,16 @@ func (t *RunCommandTool) Execute(ctx context.Context, args map[string]interface{
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 
-	// Set working directory if specified
+	// Set working directory - use safe path resolution
 	if dir, ok := args["directory"].(string); ok {
-		cmd.Dir = dir
+		if dir == "." || !filepath.IsAbs(dir) {
+			cmd.Dir = resolveSafePath(dir)
+		} else {
+			cmd.Dir = dir
+		}
+	} else {
+		// Default to projects directory
+		cmd.Dir = resolveSafePath(".")
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -374,13 +408,16 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]interface
 		root = r
 	}
 
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil, fmt.Errorf("invalid root: %w", err)
+	// Use safe path resolution for relative paths
+	var absRoot string
+	if root == "." || !filepath.IsAbs(root) {
+		absRoot = resolveSafePath(root)
+	} else {
+		absRoot = root
 	}
 
 	var matches []string
-	err = filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors
 		}

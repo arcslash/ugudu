@@ -37,6 +37,20 @@ func NewServer(mgr *manager.Manager, log *logger.Logger) *Server {
 	}
 	go s.wsHub.Run()
 	s.setupRoutes()
+
+	// Wire up activity callback to broadcast via WebSocket
+	mgr.SetActivityCallback(func(teamName, memberID, activityType, message string) {
+		if activityType == "status_change" {
+			// Broadcast as member status update
+			s.wsHub.BroadcastMemberStatus(teamName, memberID, message, "")
+		} else {
+			// Broadcast as activity
+			s.wsHub.BroadcastActivity(teamName, memberID, message, map[string]string{
+				"type": activityType,
+			})
+		}
+	})
+
 	return s
 }
 
@@ -312,6 +326,15 @@ func (s *Server) handleSpecs(w http.ResponseWriter, r *http.Request) {
 			}
 			if name, ok := role["name"].(string); ok && name != "" {
 				yaml.WriteString(fmt.Sprintf("    name: %s\n", name))
+			}
+			// Handle can_delegate array
+			if canDelegate, ok := role["can_delegate"].([]interface{}); ok && len(canDelegate) > 0 {
+				yaml.WriteString("    can_delegate:\n")
+				for _, target := range canDelegate {
+					if t, ok := target.(string); ok {
+						yaml.WriteString(fmt.Sprintf("      - %s\n", t))
+					}
+				}
 			}
 			if count, ok := role["count"].(float64); ok && count > 1 {
 				yaml.WriteString(fmt.Sprintf("    count: %.0f\n", count))

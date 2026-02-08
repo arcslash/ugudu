@@ -15,17 +15,28 @@ import (
 	"github.com/arcslash/ugudu/internal/team"
 )
 
+// ActivityCallback is called when team activity occurs
+type ActivityCallback func(teamName, memberID, activityType, message string)
+
 // Manager is the central controller for all teams
 type Manager struct {
-	teams     map[string]*team.Team
-	providers *provider.Registry
-	store     *Store
-	config    Config
+	teams      map[string]*team.Team
+	providers  *provider.Registry
+	store      *Store
+	config     Config
+	onActivity ActivityCallback
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	logger *logger.Logger
 	mu     sync.RWMutex
+}
+
+// SetActivityCallback sets the callback for team activity events
+func (m *Manager) SetActivityCallback(cb ActivityCallback) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onActivity = cb
 }
 
 // Config holds manager configuration
@@ -211,6 +222,14 @@ func (m *Manager) createPersistenceCallbacks() *team.PersistenceCallbacks {
 			}
 			return conv.ID, nil
 		},
+		OnActivity: func(teamName, memberID, activityType, message string) {
+			m.mu.RLock()
+			cb := m.onActivity
+			m.mu.RUnlock()
+			if cb != nil {
+				cb(teamName, memberID, activityType, message)
+			}
+		},
 	}
 }
 
@@ -369,6 +388,9 @@ func (m *Manager) restoreTeams() error {
 			m.logger.Warn("failed to load saved team spec", "name", saved.Name, "error", err)
 			continue
 		}
+
+		// Override spec name with saved team name (team instance name may differ from spec name)
+		spec.Metadata.Name = saved.Name
 
 		// Create team with persistence callbacks for context restoration
 		t, err := team.NewTeamWithPersistence(spec, m.providers, m.logger, m.createPersistenceCallbacks())

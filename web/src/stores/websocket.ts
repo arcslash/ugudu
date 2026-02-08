@@ -1,10 +1,10 @@
 // WebSocket store for real-time updates
 
 import { writable, get } from 'svelte/store';
-import { teamMembers } from './app';
+import { teamMembers, addMessage, currentTeamName, wasRecentlyAdded } from './app';
 
 export interface WSEvent {
-  type: 'member_status' | 'activity' | 'task_update';
+  type: 'member_status' | 'activity' | 'task_update' | 'chat';
   team: string;
   member_id?: string;
   status?: string;
@@ -101,6 +101,9 @@ function handleWSEvent(event: WSEvent) {
     case 'task_update':
       // Future: handle task updates
       break;
+    case 'chat':
+      handleChat(event);
+      break;
   }
 }
 
@@ -128,6 +131,33 @@ function handleActivity(event: WSEvent) {
   activityFeed.update(feed => {
     const newFeed = [event, ...feed];
     return newFeed.slice(0, 50);
+  });
+}
+
+function handleChat(event: WSEvent) {
+  // Only process chat for the current team
+  const teamName = get(currentTeamName);
+  if (!teamName || event.team !== teamName) return;
+
+  const memberId = event.member_id || '';
+  const data = event.data || {};
+  const msgType = data.msg_type === 'user' ? 'user' : 'agent';
+  const from = data.from || (msgType === 'user' ? 'You' : memberId);
+  const content = event.message || '';
+
+  if (!content) return;
+
+  // Skip if this message was recently added locally (prevents duplicates)
+  if (wasRecentlyAdded(event.team, memberId, content)) {
+    return;
+  }
+
+  // Add message to chat history
+  addMessage(event.team, memberId, {
+    from,
+    content,
+    type: msgType,
+    role: memberId
   });
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/arcslash/ugudu/internal/logger"
 	"github.com/arcslash/ugudu/internal/provider"
@@ -349,16 +350,28 @@ func (t *Team) Ask(content string) <-chan Message {
 			Content: content,
 		})
 
-		// Wait for responses
+		// Wait for responses - keep listening for all messages
+		// Use a timeout to detect when work is complete
+		timeout := time.After(10 * time.Minute)
+		lastActivity := time.Now()
+		idleTimeout := 30 * time.Second // Consider done if no activity for 30s
+
 		for {
 			select {
 			case <-t.ctx.Done():
 				return
 			case msg := <-t.clientChan:
 				responseChan <- msg
-				// Check if this is a final response (not a question)
-				// For now, just return after first response
-				// In practice, you'd track conversation state
+				lastActivity = time.Now()
+				t.logger.Debug("client message sent", "from", msg.From, "type", msg.Type)
+			case <-time.After(idleTimeout):
+				// Check if we've been idle long enough to consider done
+				if time.Since(lastActivity) >= idleTimeout {
+					t.logger.Debug("response complete - idle timeout")
+					return
+				}
+			case <-timeout:
+				t.logger.Warn("response timeout")
 				return
 			}
 		}

@@ -627,6 +627,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.wsHub.BroadcastMemberStatus(req.Team, targetRole, "busy", "Processing request...")
 	}
 
+	// Broadcast the user's message so all UI instances see it
+	s.wsHub.BroadcastChat(req.Team, targetRole, "user", "You", req.Message)
+
 	var respChan <-chan team.Message
 	var err error
 
@@ -685,6 +688,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 			// Broadcast activity update
 			s.wsHub.BroadcastActivity(req.Team, msg.From, content, nil)
+
+			// Broadcast agent chat message so all UI instances see it
+			if content != "" && msg.Type != "internal" {
+				s.wsHub.BroadcastChat(req.Team, msg.From, "agent", msg.From, content)
+			}
 
 			// Check for delegation patterns in the message
 			if msg.Type == "delegation" || strings.Contains(content, "delegating to") || strings.Contains(content, "asking") {

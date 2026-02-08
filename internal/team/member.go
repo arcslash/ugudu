@@ -838,9 +838,9 @@ func (m *Member) parseResponse(response, originalRequest string) responseAction 
 	if idx := indexOf(response, "DELEGATE TO "); idx >= 0 {
 		rest := response[idx+12:]
 		if colonIdx := indexOf(rest, ":"); colonIdx > 0 {
-			target := rest[:colonIdx]
+			target := cleanRoleName(rest[:colonIdx])
 			content := rest[colonIdx+1:]
-			return responseAction{Type: "delegate", Target: trim(target), Content: trim(content)}
+			return responseAction{Type: "delegate", Target: target, Content: trim(content)}
 		}
 	}
 
@@ -848,7 +848,7 @@ func (m *Member) parseResponse(response, originalRequest string) responseAction 
 	if idx := indexOf(response, "ASK "); idx >= 0 {
 		rest := response[idx+4:]
 		if colonIdx := indexOf(rest, ":"); colonIdx > 0 {
-			target := trim(rest[:colonIdx])
+			target := cleanRoleName(rest[:colonIdx])
 			content := trim(rest[colonIdx+1:])
 			// Check if it's asking the client or another role
 			if target == "CLIENT" || target == "client" {
@@ -993,7 +993,7 @@ func (m *Member) processTaskResult(result, fromRole string, originalMsg Message)
 	messages = append(messages, m.getContextMessages()...)
 
 	// Add the result as context
-	prompt := fmt.Sprintf("The %s completed their task and returned:\n\n%s\n\nBased on this, decide your next action. You can:\n1. DELEGATE TO another role for the next task\n2. Send a brief friendly update to the client (keep it short, no technical details)\n\nRemember: Keep client messages to 1-2 sentences. Technical details stay internal.", fromRole, result)
+	prompt := fmt.Sprintf("The %s completed their task.\n\nResult: %s\n\nChoose ONE action (output ONLY that action, no preamble):\n1. DELEGATE TO [role]: [task] - if more work needed\n2. [short client message] - if all done, just write the message directly\n\nIMPORTANT: Never write 'Let me...' or explain yourself. Just output the action.", fromRole, result)
 	messages = append(messages, provider.Message{Role: "user", Content: prompt})
 
 	// Get response from LLM
@@ -1114,21 +1114,21 @@ func (m *Member) handleParallelDelegation(action responseAction, originalMsg Mes
 		}
 	}
 
-	// Combine results into a single response
-	var combined string
-	combined = "Team responses:\n\n"
+	// Process results through LLM to generate a friendly client response
+	m.logger.Info("all parallel tasks complete, processing results")
+
+	var resultSummary string
+	resultSummary = "Results from team:\n"
 	for _, r := range results {
-		combined += fmt.Sprintf("**%s**:\n", r.role)
 		if r.result != nil && r.result.Success {
-			combined += r.result.Content + "\n\n"
+			resultSummary += fmt.Sprintf("- %s: completed\n", r.role)
 		} else if r.result != nil {
-			combined += fmt.Sprintf("(Failed: %s)\n\n", r.result.Error)
-		} else {
-			combined += "(No response)\n\n"
+			resultSummary += fmt.Sprintf("- %s: failed - %s\n", r.role, r.result.Error)
 		}
 	}
 
-	m.respondToClient(combined)
+	// Let PM decide how to respond to client
+	m.processTaskResult(resultSummary, "team", originalMsg)
 }
 
 func (m *Member) delegateToRole(roleName, content string, parentTask *Task) {
@@ -1192,6 +1192,7 @@ func (m *Member) askClient(question string) {
 }
 
 func (m *Member) respondToClient(content string) {
+	m.logger.Info("sending response to client", "content_len", len(content))
 	m.sendToTeam(Message{
 		ID:        uuid.New().String(),
 		Type:      MsgClientResponse,
@@ -1331,4 +1332,28 @@ func truncateMessage(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func cleanRoleName(s string) string {
+	// Remove brackets, quotes, and extra whitespace
+	s = trim(s)
+	// Remove surrounding brackets
+	if len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']' {
+		s = s[1 : len(s)-1]
+	}
+	// Remove surrounding quotes
+	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
+		s = s[1 : len(s)-1]
+	}
+	// Convert to lowercase for matching
+	result := ""
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			result += string(c + 32) // lowercase
+		} else if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+			result += string(c)
+		}
+	}
+	return result
 }

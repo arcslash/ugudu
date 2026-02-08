@@ -110,6 +110,20 @@ func (h *WSHub) BroadcastActivity(team, memberID, message string, data interface
 	})
 }
 
+// BroadcastChat sends a chat message event
+func (h *WSHub) BroadcastChat(team, memberID, msgType, from, content string) {
+	h.Broadcast(WSEvent{
+		Type:     "chat",
+		Team:     team,
+		MemberID: memberID,
+		Message:  content,
+		Data: map[string]string{
+			"from":     from,
+			"msg_type": msgType, // "user" or "agent"
+		},
+	})
+}
+
 // HandleWS handles WebSocket connections
 func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)

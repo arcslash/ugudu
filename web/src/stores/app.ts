@@ -63,8 +63,37 @@ export function saveChatHistory() {
   })();
 }
 
+// Track recently added messages to avoid duplicates from WebSocket
+const recentlyAdded = new Map<string, number>();
+
+export function markMessageAdded(teamName: string, memberId: string, content: string) {
+  const msgHash = `${teamName}:${memberId}:${content.substring(0, 100)}`;
+  recentlyAdded.set(msgHash, Date.now());
+
+  // Cleanup old entries
+  const now = Date.now();
+  for (const [key, time] of recentlyAdded) {
+    if (now - time > 10000) {
+      recentlyAdded.delete(key);
+    }
+  }
+}
+
+export function wasRecentlyAdded(teamName: string, memberId: string, content: string): boolean {
+  const msgHash = `${teamName}:${memberId}:${content.substring(0, 100)}`;
+  const lastSeen = recentlyAdded.get(msgHash);
+  if (lastSeen && Date.now() - lastSeen < 5000) {
+    return true;
+  }
+  return false;
+}
+
 export function addMessage(teamName: string, memberId: string, message: ChatMessage) {
   const key = getChatKey(teamName, memberId);
+
+  // Mark this message as recently added to prevent WebSocket duplicates
+  markMessageAdded(teamName, memberId, message.content);
+
   chatHistory.update(history => {
     const messages = history[key] || [];
     return {

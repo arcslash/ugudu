@@ -21,5 +21,16 @@ func UIHandler() http.Handler {
 		})
 	}
 
-	return http.FileServer(http.FS(sub))
+	fileServer := http.FileServer(http.FS(sub))
+
+	// Wrap with cache control headers
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No cache for HTML, cache assets with hashes
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }

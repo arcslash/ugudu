@@ -1,7 +1,81 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { currentView, currentTeamName, currentTeam, selectedMember, teamMembers, chatHistory, getChatKey, addMessage, specs, editingSpec, showSpecEditorModal } from '../stores/app';
-  import { sendMessage, deleteSpec } from '../lib/api';
+  import { sendMessage, deleteSpec, getSettings, saveSettings, type SettingsResponse } from '../lib/api';
   import type { ChatMessage } from '../types/api';
+
+  // Settings state
+  let settings: SettingsResponse | null = null;
+  let settingsLoading = false;
+  let settingsSaving = false;
+  let settingsError = '';
+  let settingsSuccess = '';
+
+  // API key inputs (separate from masked display)
+  let apiKeys = {
+    anthropic: '',
+    openai: '',
+    openrouter: '',
+    groq: '',
+    ollama_url: ''
+  };
+
+  async function loadSettings() {
+    settingsLoading = true;
+    try {
+      settings = await getSettings();
+      // Pre-fill ollama URL if configured
+      if (settings.providers.ollama.url) {
+        apiKeys.ollama_url = settings.providers.ollama.url;
+      }
+    } catch (e: any) {
+      settingsError = e.message;
+    } finally {
+      settingsLoading = false;
+    }
+  }
+
+  async function handleSaveProvider(provider: string) {
+    settingsSaving = true;
+    settingsError = '';
+    settingsSuccess = '';
+
+    try {
+      const payload: any = { providers: {} };
+
+      if (provider === 'anthropic' && apiKeys.anthropic) {
+        payload.providers.anthropic = { api_key: apiKeys.anthropic };
+      } else if (provider === 'openai' && apiKeys.openai) {
+        payload.providers.openai = { api_key: apiKeys.openai };
+      } else if (provider === 'openrouter' && apiKeys.openrouter) {
+        payload.providers.openrouter = { api_key: apiKeys.openrouter };
+      } else if (provider === 'groq' && apiKeys.groq) {
+        payload.providers.groq = { api_key: apiKeys.groq };
+      } else if (provider === 'ollama' && apiKeys.ollama_url) {
+        payload.providers.ollama = { url: apiKeys.ollama_url };
+      }
+
+      await saveSettings(payload);
+      settingsSuccess = `${provider} saved successfully!`;
+
+      // Clear the input and reload settings
+      if (provider !== 'ollama') {
+        (apiKeys as any)[provider] = '';
+      }
+      await loadSettings();
+
+      setTimeout(() => settingsSuccess = '', 3000);
+    } catch (e: any) {
+      settingsError = e.message;
+    } finally {
+      settingsSaving = false;
+    }
+  }
+
+  // Load settings when providers view is shown
+  $: if ($currentView === 'providers' && !settings) {
+    loadSettings();
+  }
 
   let messageInput = '';
   let sending = false;
@@ -189,16 +263,140 @@
   {:else if $currentView === 'providers'}
     <div class="providers-view">
       <h1>LLM Providers</h1>
-      <p class="subtitle">Configure your AI providers</p>
+      <p class="subtitle">Configure your AI provider API keys</p>
 
-      <div class="provider-card">
-        <div class="provider-icon">🤖</div>
-        <div class="provider-info">
-          <h3>OpenRouter</h3>
-          <p>Access multiple AI models through a single API</p>
+      {#if settingsError}
+        <div class="settings-error">{settingsError}</div>
+      {/if}
+      {#if settingsSuccess}
+        <div class="settings-success">{settingsSuccess}</div>
+      {/if}
+
+      {#if settingsLoading}
+        <div class="loading">Loading settings...</div>
+      {:else if settings}
+        <div class="providers-grid">
+          <!-- OpenRouter -->
+          <div class="provider-card" class:configured={settings.providers.openrouter.configured}>
+            <div class="provider-header">
+              <div class="provider-icon">🌐</div>
+              <div class="provider-title">
+                <h3>OpenRouter</h3>
+                <p>Access Claude, GPT-4, Gemini, and more</p>
+              </div>
+              <div class="provider-status" class:active={settings.providers.openrouter.configured}>
+                {settings.providers.openrouter.configured ? '✓ Connected' : 'Not configured'}
+              </div>
+            </div>
+            <div class="provider-form">
+              <input
+                type="password"
+                bind:value={apiKeys.openrouter}
+                placeholder={settings.providers.openrouter.configured ? settings.providers.openrouter.api_key : 'Enter OpenRouter API key'}
+              />
+              <button class="btn-save" on:click={() => handleSaveProvider('openrouter')} disabled={settingsSaving || !apiKeys.openrouter}>
+                Save
+              </button>
+            </div>
+          </div>
+
+          <!-- Anthropic -->
+          <div class="provider-card" class:configured={settings.providers.anthropic.configured}>
+            <div class="provider-header">
+              <div class="provider-icon">🧠</div>
+              <div class="provider-title">
+                <h3>Anthropic</h3>
+                <p>Claude models directly</p>
+              </div>
+              <div class="provider-status" class:active={settings.providers.anthropic.configured}>
+                {settings.providers.anthropic.configured ? '✓ Connected' : 'Not configured'}
+              </div>
+            </div>
+            <div class="provider-form">
+              <input
+                type="password"
+                bind:value={apiKeys.anthropic}
+                placeholder={settings.providers.anthropic.configured ? settings.providers.anthropic.api_key : 'Enter Anthropic API key'}
+              />
+              <button class="btn-save" on:click={() => handleSaveProvider('anthropic')} disabled={settingsSaving || !apiKeys.anthropic}>
+                Save
+              </button>
+            </div>
+          </div>
+
+          <!-- OpenAI -->
+          <div class="provider-card" class:configured={settings.providers.openai.configured}>
+            <div class="provider-header">
+              <div class="provider-icon">🤖</div>
+              <div class="provider-title">
+                <h3>OpenAI</h3>
+                <p>GPT-4, GPT-4o models</p>
+              </div>
+              <div class="provider-status" class:active={settings.providers.openai.configured}>
+                {settings.providers.openai.configured ? '✓ Connected' : 'Not configured'}
+              </div>
+            </div>
+            <div class="provider-form">
+              <input
+                type="password"
+                bind:value={apiKeys.openai}
+                placeholder={settings.providers.openai.configured ? settings.providers.openai.api_key : 'Enter OpenAI API key'}
+              />
+              <button class="btn-save" on:click={() => handleSaveProvider('openai')} disabled={settingsSaving || !apiKeys.openai}>
+                Save
+              </button>
+            </div>
+          </div>
+
+          <!-- Groq -->
+          <div class="provider-card" class:configured={settings.providers.groq.configured}>
+            <div class="provider-header">
+              <div class="provider-icon">⚡</div>
+              <div class="provider-title">
+                <h3>Groq</h3>
+                <p>Fast inference for Llama, Mixtral</p>
+              </div>
+              <div class="provider-status" class:active={settings.providers.groq.configured}>
+                {settings.providers.groq.configured ? '✓ Connected' : 'Not configured'}
+              </div>
+            </div>
+            <div class="provider-form">
+              <input
+                type="password"
+                bind:value={apiKeys.groq}
+                placeholder={settings.providers.groq.configured ? settings.providers.groq.api_key : 'Enter Groq API key'}
+              />
+              <button class="btn-save" on:click={() => handleSaveProvider('groq')} disabled={settingsSaving || !apiKeys.groq}>
+                Save
+              </button>
+            </div>
+          </div>
+
+          <!-- Ollama -->
+          <div class="provider-card" class:configured={settings.providers.ollama.configured}>
+            <div class="provider-header">
+              <div class="provider-icon">🦙</div>
+              <div class="provider-title">
+                <h3>Ollama</h3>
+                <p>Local models (Llama, Mistral, etc.)</p>
+              </div>
+              <div class="provider-status" class:active={settings.providers.ollama.configured}>
+                {settings.providers.ollama.configured ? '✓ Connected' : 'Not configured'}
+              </div>
+            </div>
+            <div class="provider-form">
+              <input
+                type="text"
+                bind:value={apiKeys.ollama_url}
+                placeholder="http://localhost:11434"
+              />
+              <button class="btn-save" on:click={() => handleSaveProvider('ollama')} disabled={settingsSaving || !apiKeys.ollama_url}>
+                Save
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="provider-status configured">Configured</div>
-      </div>
+      {/if}
     </div>
 
   {:else if $currentView === 'team' && $currentTeam}
@@ -411,47 +609,142 @@
 
   /* Providers View */
   .providers-view {
-    max-width: 600px;
+    max-width: 700px;
+  }
+
+  .providers-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .settings-error {
+    background: rgba(229, 115, 115, 0.1);
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .settings-success {
+    background: rgba(124, 179, 66, 0.1);
+    border: 1px solid var(--success);
+    color: var(--success);
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .loading {
+    color: var(--text-muted);
+    padding: 40px;
+    text-align: center;
   }
 
   .provider-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    transition: all 0.2s;
+  }
+
+  .provider-card.configured {
+    border-color: var(--success);
+    border-left-width: 3px;
+  }
+
+  .provider-header {
     display: flex;
     align-items: center;
     gap: 16px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
+    margin-bottom: 16px;
   }
 
   .provider-icon {
-    font-size: 32px;
+    font-size: 28px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
   }
 
-  .provider-info {
+  .provider-title {
     flex: 1;
   }
 
-  .provider-info h3 {
+  .provider-title h3 {
     font-size: 16px;
-    margin-bottom: 4px;
+    font-weight: 600;
+    margin-bottom: 2px;
   }
 
-  .provider-info p {
+  .provider-title p {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--text-muted);
   }
 
   .provider-status {
-    padding: 6px 12px;
+    padding: 6px 14px;
     border-radius: 20px;
     font-size: 12px;
     font-weight: 500;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
   }
 
-  .provider-status.configured {
-    background: rgba(124, 179, 66, 0.2);
+  .provider-status.active {
+    background: rgba(124, 179, 66, 0.15);
     color: var(--success);
+  }
+
+  .provider-form {
+    display: flex;
+    gap: 12px;
+  }
+
+  .provider-form input {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .provider-form input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .provider-form input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .btn-save {
+    padding: 12px 24px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: var(--bg-primary);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-save:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+
+  .btn-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Team View */

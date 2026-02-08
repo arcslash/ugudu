@@ -92,3 +92,41 @@ export async function getProviders(): Promise<Provider[]> {
 export async function testProvider(id: string) {
   return request(`/providers/${id}/test`);
 }
+
+// Settings
+export interface SettingsResponse {
+  providers: {
+    anthropic: { configured: boolean; api_key: string };
+    openai: { configured: boolean; api_key: string; base_url: string };
+    openrouter: { configured: boolean; api_key: string };
+    groq: { configured: boolean; api_key: string };
+    ollama: { configured: boolean; url: string };
+  };
+  defaults: {
+    provider: string;
+    model: string;
+  };
+}
+
+export async function getSettings(): Promise<SettingsResponse> {
+  return request('/settings');
+}
+
+export async function saveSettings(settings: {
+  providers?: {
+    anthropic?: { api_key: string };
+    openai?: { api_key: string; base_url?: string };
+    openrouter?: { api_key: string };
+    groq?: { api_key: string };
+    ollama?: { url: string };
+  };
+  defaults?: {
+    provider: string;
+    model: string;
+  };
+}) {
+  return request('/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings)
+  });
+}

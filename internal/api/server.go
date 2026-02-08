@@ -66,6 +66,9 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/providers", cors(s.handleProviders))
 	s.mux.HandleFunc("/api/providers/", cors(s.handleProviderByID))
 
+	// Settings (API keys, config)
+	s.mux.HandleFunc("/api/settings", cors(s.handleSettings))
+
 	// Specs (team blueprints)
 	s.mux.HandleFunc("/api/specs", cors(s.handleSpecs))
 	s.mux.HandleFunc("/api/specs/", cors(s.handleSpecByName))
@@ -1062,6 +1065,131 @@ func (s *Server) handleTeamTokenMode(w http.ResponseWriter, r *http.Request, tea
 		"status": "ok",
 		"mode":   req.Mode,
 	})
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		cfg, err := config.Load()
+		if err != nil {
+			s.error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		// Mask API keys for display (show last 4 chars only)
+		maskKey := func(key string) string {
+			if len(key) <= 4 {
+				return strings.Repeat("*", len(key))
+			}
+			return strings.Repeat("*", len(key)-4) + key[len(key)-4:]
+		}
+
+		s.json(w, http.StatusOK, map[string]interface{}{
+			"providers": map[string]interface{}{
+				"anthropic": map[string]interface{}{
+					"configured": cfg.Providers.Anthropic.APIKey != "",
+					"api_key":    maskKey(cfg.Providers.Anthropic.APIKey),
+				},
+				"openai": map[string]interface{}{
+					"configured": cfg.Providers.OpenAI.APIKey != "",
+					"api_key":    maskKey(cfg.Providers.OpenAI.APIKey),
+					"base_url":   cfg.Providers.OpenAI.BaseURL,
+				},
+				"openrouter": map[string]interface{}{
+					"configured": cfg.Providers.OpenRouter.APIKey != "",
+					"api_key":    maskKey(cfg.Providers.OpenRouter.APIKey),
+				},
+				"groq": map[string]interface{}{
+					"configured": cfg.Providers.Groq.APIKey != "",
+					"api_key":    maskKey(cfg.Providers.Groq.APIKey),
+				},
+				"ollama": map[string]interface{}{
+					"configured": cfg.Providers.Ollama.URL != "",
+					"url":        cfg.Providers.Ollama.URL,
+				},
+			},
+			"defaults": map[string]interface{}{
+				"provider": cfg.Defaults.Provider,
+				"model":    cfg.Defaults.Model,
+			},
+		})
+
+	case "POST", "PUT":
+		var req struct {
+			Providers struct {
+				Anthropic  *struct{ APIKey string `json:"api_key"` }  `json:"anthropic,omitempty"`
+				OpenAI     *struct{ APIKey, BaseURL string }          `json:"openai,omitempty"`
+				OpenRouter *struct{ APIKey string `json:"api_key"` }  `json:"openrouter,omitempty"`
+				Groq       *struct{ APIKey string `json:"api_key"` }  `json:"groq,omitempty"`
+				Ollama     *struct{ URL string }                      `json:"ollama,omitempty"`
+			} `json:"providers"`
+			Defaults *struct {
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+			} `json:"defaults,omitempty"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.error(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Load existing config
+		cfg, err := config.Load()
+		if err != nil {
+			cfg = &config.Config{}
+		}
+
+		// Update only provided fields
+		if req.Providers.Anthropic != nil && req.Providers.Anthropic.APIKey != "" {
+			cfg.Providers.Anthropic.APIKey = req.Providers.Anthropic.APIKey
+		}
+		if req.Providers.OpenAI != nil {
+			if req.Providers.OpenAI.APIKey != "" {
+				cfg.Providers.OpenAI.APIKey = req.Providers.OpenAI.APIKey
+			}
+			if req.Providers.OpenAI.BaseURL != "" {
+				cfg.Providers.OpenAI.BaseURL = req.Providers.OpenAI.BaseURL
+			}
+		}
+		if req.Providers.OpenRouter != nil && req.Providers.OpenRouter.APIKey != "" {
+			cfg.Providers.OpenRouter.APIKey = req.Providers.OpenRouter.APIKey
+		}
+		if req.Providers.Groq != nil && req.Providers.Groq.APIKey != "" {
+			cfg.Providers.Groq.APIKey = req.Providers.Groq.APIKey
+		}
+		if req.Providers.Ollama != nil && req.Providers.Ollama.URL != "" {
+			cfg.Providers.Ollama.URL = req.Providers.Ollama.URL
+		}
+		if req.Defaults != nil {
+			if req.Defaults.Provider != "" {
+				cfg.Defaults.Provider = req.Defaults.Provider
+			}
+			if req.Defaults.Model != "" {
+				cfg.Defaults.Model = req.Defaults.Model
+			}
+		}
+
+		// Save config
+		if err := config.Save(cfg); err != nil {
+			s.error(w, http.StatusInternalServerError, "failed to save config: "+err.Error())
+			return
+		}
+
+		// Apply to environment so providers can be discovered
+		cfg.ApplyToEnvironment()
+
+		// Re-initialize providers
+		s.manager.Providers().AutoDiscover()
+
+		s.json(w, http.StatusOK, map[string]interface{}{
+			"status":  "ok",
+			"message": "Settings saved. Providers re-initialized.",
+		})
+
+	default:
+		s.error(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {

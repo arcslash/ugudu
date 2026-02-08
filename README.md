@@ -64,10 +64,52 @@ ugudu ask my-team "Review the login code" --to qa
 
 The web UI is built into the binary. Start the daemon and open http://localhost:9741
 
-- Create and manage teams
-- Chat with team members
-- Edit team specs with per-role model configuration
-- View team status and progress
+#### 1. Configure Providers
+
+First, set up your AI provider API keys:
+
+1. Click **Providers** in the sidebar
+2. Enter your API key for OpenRouter, Anthropic, OpenAI, or others
+3. Click **Save** - the provider is ready immediately
+
+#### 2. Create a Team Spec
+
+Specs are blueprints that define your team structure:
+
+1. Click **Specs** in the sidebar
+2. Click **+ New Spec**
+3. Enter a team name (e.g., "my-dev-team")
+4. Add team members using **+ Add Member** dropdown:
+   - Select role type (PM, Engineer, QA, etc.)
+   - Names and personas are auto-generated
+   - Check **Client Facing** for roles that talk to you (usually PM)
+   - Click **Advanced** to customize persona or model per role
+5. Click **Create Team**
+
+#### 3. Create a Team from Spec
+
+1. Click **+ New Team** in the sidebar
+2. Enter a team name
+3. Select the spec you created
+4. Click **Create**
+
+The team appears in the sidebar with all members listed.
+
+#### 4. Chat with Your Team
+
+1. Click on your team in the sidebar
+2. Click on a **client-facing** member (marked with 💬) - usually the PM
+3. Type your request in the chat box, e.g.:
+   - "Build me a REST API for user management"
+   - "What's the status of the project?"
+   - "Review the authentication code"
+4. The PM will coordinate with other team members and report back
+
+**Tips:**
+- Only client-facing roles show the chat input
+- Non-client-facing roles show their activity log
+- The PM delegates to Engineers/QA automatically
+- Status indicators show which agents are busy (pulsing) or idle
 
 ### MCP Integration (Claude Desktop)
 

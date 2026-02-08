@@ -78,10 +78,11 @@ type Config struct {
 
 // ProvidersConfig holds provider API keys
 type ProvidersConfig struct {
-	Anthropic AnthropicConfig `yaml:"anthropic,omitempty"`
-	OpenAI    OpenAIConfig    `yaml:"openai,omitempty"`
-	Groq      GroqConfig      `yaml:"groq,omitempty"`
-	Ollama    OllamaConfig    `yaml:"ollama,omitempty"`
+	Anthropic  AnthropicConfig  `yaml:"anthropic,omitempty"`
+	OpenAI     OpenAIConfig     `yaml:"openai,omitempty"`
+	Groq       GroqConfig       `yaml:"groq,omitempty"`
+	Ollama     OllamaConfig     `yaml:"ollama,omitempty"`
+	OpenRouter OpenRouterConfig `yaml:"openrouter,omitempty"`
 }
 
 // AnthropicConfig holds Anthropic settings
@@ -103,6 +104,13 @@ type GroqConfig struct {
 // OllamaConfig holds Ollama settings
 type OllamaConfig struct {
 	URL string `yaml:"url,omitempty"`
+}
+
+// OpenRouterConfig holds OpenRouter settings
+type OpenRouterConfig struct {
+	APIKey   string `yaml:"api_key,omitempty"`
+	SiteName string `yaml:"site_name,omitempty"`
+	SiteURL  string `yaml:"site_url,omitempty"`
 }
 
 // DefaultsConfig holds default settings
@@ -186,6 +194,9 @@ func (c *Config) ApplyToEnvironment() {
 	}
 	if c.Providers.Ollama.URL != "" && os.Getenv("OLLAMA_URL") == "" {
 		os.Setenv("OLLAMA_URL", c.Providers.Ollama.URL)
+	}
+	if c.Providers.OpenRouter.APIKey != "" && os.Getenv("OPENROUTER_API_KEY") == "" {
+		os.Setenv("OPENROUTER_API_KEY", c.Providers.OpenRouter.APIKey)
 	}
 }
 

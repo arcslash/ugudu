@@ -69,17 +69,16 @@ func (s *Server) handleCreateTeam(ctx context.Context, args map[string]interface
 	// Replace name in spec
 	modifiedSpec := replaceTeamNameInSpec(string(content), name)
 
-	// Write to temp file
-	tmpFile := filepath.Join(os.TempDir(), name+".yaml")
-	if err := os.WriteFile(tmpFile, []byte(modifiedSpec), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write temp spec: %w", err)
+	// Write to persistent spec file in ~/.ugudu/specs/
+	specFile := filepath.Join(config.SpecsDir(), name+".yaml")
+	if err := os.WriteFile(specFile, []byte(modifiedSpec), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write spec file: %w", err)
 	}
-	defer os.Remove(tmpFile)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	result, err := s.client.CreateTeam(ctx, tmpFile)
+	result, err := s.client.CreateTeam(ctx, specFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}

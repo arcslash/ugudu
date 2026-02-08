@@ -241,15 +241,20 @@ func (o *OpenAI) convertRequest(req *ChatRequest) map[string]interface{} {
 	if len(req.Tools) > 0 {
 		tools := make([]map[string]interface{}, len(req.Tools))
 		for i, t := range req.Tools {
+			// t.Parameters already contains the full schema with "type": "object" and "properties"
+			params := t.Parameters
+			if params == nil {
+				params = map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
+				}
+			}
 			tools[i] = map[string]interface{}{
 				"type": "function",
 				"function": map[string]interface{}{
 					"name":        t.Name,
 					"description": t.Description,
-					"parameters": map[string]interface{}{
-						"type":       "object",
-						"properties": t.Parameters,
-					},
+					"parameters":  params,
 				},
 			}
 		}

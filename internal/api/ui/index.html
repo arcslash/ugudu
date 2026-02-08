@@ -797,9 +797,19 @@
         const API_BASE = '/api';
         let currentTeam = null;
         let currentMember = null;
-        let messages = [];
+        let chatHistory = {};  // Per-member chat history: { 'team:member': [...messages] }
         let specs = [];
         let selectedSpec = null;
+
+        function getChatKey() {
+            return `${currentTeam}:${currentMember}`;
+        }
+
+        function getCurrentMessages() {
+            const key = getChatKey();
+            if (!chatHistory[key]) chatHistory[key] = [];
+            return chatHistory[key];
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -915,10 +925,31 @@
         function selectMember(id) {
             currentMember = id;
             document.getElementById('memberSelect').value = id;
+            renderChatHistory();
         }
 
         function updateChatTarget() {
             currentMember = document.getElementById('memberSelect').value;
+            renderChatHistory();
+        }
+
+        function renderChatHistory() {
+            const container = document.getElementById('messages');
+            container.innerHTML = '';
+            const msgs = getCurrentMessages();
+            msgs.forEach(m => {
+                const msg = document.createElement('div');
+                msg.className = `message ${m.type}`;
+                msg.innerHTML = `
+                    <div class="message-header">
+                        ${m.from}
+                        ${m.role ? `<span class="message-role">${m.role}</span>` : ''}
+                    </div>
+                    <div class="message-content">${escapeHtml(m.content)}</div>
+                `;
+                container.appendChild(msg);
+            });
+            container.scrollTop = container.scrollHeight;
         }
 
         // Team actions
@@ -1048,7 +1079,7 @@
                 method: 'POST',
                 body: JSON.stringify({
                     team: currentTeam,
-                    member: currentMember,
+                    to: currentMember,
                     message: message
                 })
             });
@@ -1068,6 +1099,9 @@
         }
 
         function addMessage(from, content, type, role) {
+            // Store in per-member history
+            getCurrentMessages().push({ from, content, type, role });
+
             const container = document.getElementById('messages');
             const msg = document.createElement('div');
             msg.className = `message ${type}`;

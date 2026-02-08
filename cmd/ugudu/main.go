@@ -274,15 +274,17 @@ List templates with: ugudu templates list`,
 			// Modify the spec to use the provided team name
 			modifiedSpec := replaceTeamName(string(specContent), teamName)
 
-			// Write to temp file
-			tmpFile := filepath.Join(os.TempDir(), teamName+".yaml")
-			os.WriteFile(tmpFile, []byte(modifiedSpec), 0644)
-			defer os.Remove(tmpFile)
+			// Write to persistent spec file in ~/.ugudu/specs/
+			specFile := filepath.Join(config.SpecsDir(), teamName+".yaml")
+			if err := os.WriteFile(specFile, []byte(modifiedSpec), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing spec file: %v\n", err)
+				os.Exit(1)
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			result, err := client.CreateTeam(ctx, tmpFile)
+			result, err := client.CreateTeam(ctx, specFile)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error creating team: %v\n", err)
 				os.Exit(1)

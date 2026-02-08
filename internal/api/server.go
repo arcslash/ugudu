@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,6 +65,7 @@ func (s *Server) setupRoutes() {
 
 	// Specs (team blueprints)
 	s.mux.HandleFunc("/api/specs", cors(s.handleSpecs))
+	s.mux.HandleFunc("/api/specs/", cors(s.handleSpecByName))
 
 	// Teams
 	s.mux.HandleFunc("/api/teams", cors(s.handleTeams))
@@ -78,6 +80,9 @@ func (s *Server) setupRoutes() {
 
 	// Conversations
 	s.mux.HandleFunc("/api/conversations/", cors(s.handleConversation))
+
+	// Serve static files (images)
+	s.mux.HandleFunc("/api/static/", s.handleStatic)
 
 	// Serve embedded UI at root
 	s.mux.Handle("/", UIHandler())
@@ -118,6 +123,30 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"time":   time.Now().Format(time.RFC3339),
 	})
+}
+
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	// Serve static files from images directory
+	filename := strings.TrimPrefix(r.URL.Path, "/api/static/")
+	if filename == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Look for file in the images directory relative to executable or home
+	paths := []string{
+		filepath.Join("images", filename),
+		filepath.Join(os.Getenv("HOME"), "Projects", "ugudu", "images", filename),
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			http.ServeFile(w, r, path)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -195,41 +224,185 @@ func (s *Server) handleProviderByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSpecs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		s.error(w, http.StatusMethodNotAllowed, "GET required")
-		return
-	}
-
 	specsDir := config.SpecsDir()
-	entries, err := os.ReadDir(specsDir)
-	if err != nil {
-		s.json(w, http.StatusOK, map[string]interface{}{"specs": []interface{}{}})
+
+	switch r.Method {
+	case "GET":
+		entries, err := os.ReadDir(specsDir)
+		if err != nil {
+			s.json(w, http.StatusOK, map[string]interface{}{"specs": []interface{}{}})
+			return
+		}
+
+		var specs []map[string]interface{}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+
+			name := strings.TrimSuffix(e.Name(), ".yaml")
+			specPath := filepath.Join(specsDir, e.Name())
+
+			memberCount := 0
+			if spec, err := team.LoadSpec(specPath); err == nil {
+				memberCount = len(spec.Roles)
+			}
+
+			specs = append(specs, map[string]interface{}{
+				"name":    name,
+				"path":    specPath,
+				"members": memberCount,
+			})
+		}
+		s.json(w, http.StatusOK, map[string]interface{}{"specs": specs})
+
+	case "POST":
+		var req struct {
+			Name        string                            `json:"name"`
+			Description string                            `json:"description"`
+			Provider    string                            `json:"provider"`
+			Model       string                            `json:"model"`
+			Roles       map[string]map[string]interface{} `json:"roles"`
+			ClientFacing []string                         `json:"client_facing"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.error(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if req.Name == "" {
+			s.error(w, http.StatusBadRequest, "name required")
+			return
+		}
+
+		// Build YAML content
+		var yaml strings.Builder
+		yaml.WriteString("apiVersion: ugudu/v1\n")
+		yaml.WriteString("kind: Team\n")
+		yaml.WriteString("metadata:\n")
+		yaml.WriteString(fmt.Sprintf("  name: %s\n", req.Name))
+		if req.Description != "" {
+			yaml.WriteString(fmt.Sprintf("  description: %s\n", req.Description))
+		}
+		yaml.WriteString("\n")
+
+		if len(req.ClientFacing) > 0 {
+			yaml.WriteString("client_facing:\n")
+			for _, cf := range req.ClientFacing {
+				yaml.WriteString(fmt.Sprintf("  - %s\n", cf))
+			}
+			yaml.WriteString("\n")
+		}
+
+		yaml.WriteString("roles:\n")
+		for roleID, role := range req.Roles {
+			yaml.WriteString(fmt.Sprintf("  %s:\n", roleID))
+			if title, ok := role["title"].(string); ok && title != "" {
+				yaml.WriteString(fmt.Sprintf("    title: %s\n", title))
+			}
+			if name, ok := role["name"].(string); ok && name != "" {
+				yaml.WriteString(fmt.Sprintf("    name: %s\n", name))
+			}
+			if count, ok := role["count"].(float64); ok && count > 1 {
+				yaml.WriteString(fmt.Sprintf("    count: %.0f\n", count))
+			}
+			// Use per-role provider/model if specified, otherwise use defaults
+			roleProvider := req.Provider
+			roleModel := req.Model
+			if p, ok := role["provider"].(string); ok && p != "" {
+				roleProvider = p
+			}
+			if m, ok := role["model"].(string); ok && m != "" {
+				roleModel = m
+			}
+			yaml.WriteString("    model:\n")
+			yaml.WriteString(fmt.Sprintf("      provider: %s\n", roleProvider))
+			yaml.WriteString(fmt.Sprintf("      model: %s\n", roleModel))
+			if persona, ok := role["persona"].(string); ok && persona != "" {
+				yaml.WriteString("    persona: |\n")
+				for _, line := range strings.Split(persona, "\n") {
+					yaml.WriteString(fmt.Sprintf("      %s\n", line))
+				}
+			}
+			yaml.WriteString("\n")
+		}
+
+		// Write to file
+		specPath := filepath.Join(specsDir, req.Name+".yaml")
+		if err := os.WriteFile(specPath, []byte(yaml.String()), 0644); err != nil {
+			s.error(w, http.StatusInternalServerError, "failed to save spec: "+err.Error())
+			return
+		}
+
+		s.json(w, http.StatusOK, map[string]interface{}{"status": "ok", "path": specPath})
+
+	default:
+		s.error(w, http.StatusMethodNotAllowed, "GET or POST required")
+	}
+}
+
+func (s *Server) handleSpecByName(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/api/specs/")
+	if name == "" {
+		s.error(w, http.StatusBadRequest, "spec name required")
 		return
 	}
 
-	var specs []map[string]interface{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
+	specPath := filepath.Join(config.SpecsDir(), name+".yaml")
+
+	switch r.Method {
+	case "GET":
+		spec, err := team.LoadSpec(specPath)
+		if err != nil {
+			s.error(w, http.StatusNotFound, "spec not found")
+			return
 		}
 
-		name := strings.TrimSuffix(e.Name(), ".yaml")
-		specPath := filepath.Join(specsDir, e.Name())
-
-		// Try to load spec to count members
-		memberCount := 0
-		if spec, err := team.LoadSpec(specPath); err == nil {
-			memberCount = len(spec.Roles)
+		// Convert to JSON-friendly format
+		roles := make(map[string]interface{})
+		defaultProvider := ""
+		defaultModel := ""
+		for id, role := range spec.Roles {
+			// Track first role's model config as default
+			if defaultProvider == "" && role.Model.Provider != "" {
+				defaultProvider = role.Model.Provider
+				defaultModel = role.Model.Model
+			}
+			roles[id] = map[string]interface{}{
+				"title":    role.Title,
+				"name":     role.Name,
+				"names":    role.Names,
+				"count":    role.Count,
+				"persona":  role.Persona,
+				"provider": role.Model.Provider,
+				"model":    role.Model.Model,
+			}
 		}
 
-		specs = append(specs, map[string]interface{}{
-			"name":    name,
-			"path":    specPath,
-			"members": memberCount,
+		s.json(w, http.StatusOK, map[string]interface{}{
+			"name":          spec.Metadata.Name,
+			"description":   spec.Metadata.Description,
+			"roles":         roles,
+			"client_facing": spec.ClientFacing,
+			"provider":      defaultProvider,
+			"model":         defaultModel,
 		})
-	}
 
-	s.json(w, http.StatusOK, map[string]interface{}{"specs": specs})
+	case "DELETE":
+		if err := os.Remove(specPath); err != nil {
+			if os.IsNotExist(err) {
+				s.error(w, http.StatusNotFound, "spec not found")
+			} else {
+				s.error(w, http.StatusInternalServerError, "failed to delete: "+err.Error())
+			}
+			return
+		}
+		s.json(w, http.StatusOK, map[string]interface{}{"status": "deleted"})
+
+	default:
+		s.error(w, http.StatusMethodNotAllowed, "GET or DELETE required")
+	}
 }
 
 func (s *Server) handleTeams(w http.ResponseWriter, r *http.Request) {
@@ -325,13 +498,22 @@ func (s *Server) handleTeamByName(w http.ResponseWriter, r *http.Request) {
 			}
 			members := make([]map[string]interface{}, 0)
 			for _, m := range t.ListMembers() {
+				// Check if member is client-facing based on spec's client_facing list
+				isClientFacing := false
+				for _, cf := range t.Spec.ClientFacing {
+					if cf == m.RoleName {
+						isClientFacing = true
+						break
+					}
+				}
 				members = append(members, map[string]interface{}{
 					"id":            m.ID,
+					"name":          m.Name,
 					"role":          m.RoleName,
 					"title":         m.Role.Title,
 					"status":        m.GetStatus(),
 					"visibility":    m.Role.Visibility,
-					"client_facing": m.Role.Visibility == "external",
+					"client_facing": isClientFacing,
 					"provider":      m.Role.Model.Provider,
 					"model":         m.Role.Model.Model,
 				})

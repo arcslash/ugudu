@@ -9,19 +9,89 @@
   let defaultProvider = 'openrouter';
   let defaultModel = 'anthropic/claude-3.5-sonnet';
   let roles: Array<{
-    key: string;
-    title: string;
+    id: string;
+    roleType: string;
     name: string;
-    persona: string;
     provider?: string;
     model?: string;
     useCustomModel: boolean;
+    showAdvanced: boolean;
+    persona: string;
   }> = [];
   let clientFacing: string[] = [];
   let saving = false;
   let loading = false;
   let error = '';
   let providers: Provider[] = [];
+
+  // Role presets with auto-generated personas
+  const rolePresets = {
+    pm: {
+      title: 'Project Manager',
+      key: 'pm',
+      names: ['Sarah', 'Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey'],
+      basePersona: 'You are {name}, a friendly and approachable Project Manager. You coordinate the team and communicate with clients in a warm, conversational tone.',
+      traits: [
+        'You love breaking down complex problems into manageable tasks.',
+        'You always celebrate team wins, no matter how small.',
+        'You have a knack for keeping everyone motivated.',
+        'You prefer action over endless planning.',
+        'You believe in transparent communication.'
+      ]
+    },
+    engineer: {
+      title: 'Software Engineer',
+      key: 'engineer',
+      names: ['Mike', 'Julia', 'Sam', 'Dev', 'Riley', 'Quinn'],
+      basePersona: 'You are {name}, a skilled Software Engineer. You write clean, efficient code and use your tools to actually implement features.',
+      traits: [
+        'You love elegant solutions to complex problems.',
+        'You always test your code before committing.',
+        'You write code that other developers can understand.',
+        'You prefer pragmatic solutions over perfect ones.',
+        'You document the non-obvious parts of your code.'
+      ]
+    },
+    qa: {
+      title: 'QA Engineer',
+      key: 'qa',
+      names: ['Chris', 'Pat', 'Jamie', 'Drew', 'Avery', 'Blake'],
+      basePersona: 'You are {name}, a detail-oriented QA Engineer. You find bugs, verify fixes, and ensure quality.',
+      traits: [
+        'You have an eye for edge cases others miss.',
+        'You think like a user, not just a tester.',
+        'You write clear bug reports that developers love.',
+        'You balance thoroughness with efficiency.',
+        'You celebrate when you break things.'
+      ]
+    },
+    ba: {
+      title: 'Business Analyst',
+      key: 'ba',
+      names: ['Robin', 'Dana', 'Lee', 'Sage', 'River', 'Phoenix'],
+      basePersona: 'You are {name}, a Business Analyst. You translate business needs into clear requirements.',
+      traits: [
+        'You ask the questions others forget to ask.',
+        'You love creating clear documentation.',
+        'You bridge the gap between business and tech.',
+        'You spot inconsistencies in requirements.',
+        'You keep the big picture in mind.'
+      ]
+    },
+    designer: {
+      title: 'UI/UX Designer',
+      key: 'designer',
+      names: ['Sky', 'Kai', 'Ellis', 'Finley', 'Rowan', 'Emery'],
+      basePersona: 'You are {name}, a creative UI/UX Designer. You create intuitive and beautiful user experiences.',
+      traits: [
+        'You advocate for the user in every decision.',
+        'You balance aesthetics with functionality.',
+        'You love clean, minimal designs.',
+        'You prototype quickly to test ideas.',
+        'You stay current with design trends.'
+      ]
+    }
+  };
 
   const modelOptions = [
     { provider: 'openrouter', models: [
@@ -30,8 +100,6 @@
       'google/gemini-pro-1.5',
       'google/gemini-flash-1.5',
       'deepseek/deepseek-chat',
-      'meta-llama/llama-3.1-70b-instruct',
-      'openai/gpt-4-turbo',
       'openai/gpt-4o',
     ]},
     { provider: 'anthropic', models: [
@@ -49,6 +117,29 @@
   function getModelsForProvider(provider: string): string[] {
     const found = modelOptions.find(p => p.provider === provider);
     return found?.models || [];
+  }
+
+  function generateUniqueId(): string {
+    return Math.random().toString(36).substring(2, 8);
+  }
+
+  function pickRandom<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function generatePersona(roleType: string, name: string): string {
+    const preset = rolePresets[roleType as keyof typeof rolePresets];
+    if (!preset) return '';
+
+    const base = preset.basePersona.replace('{name}', name);
+    const trait = pickRandom(preset.traits);
+    return `${base}\n\n${trait}`;
+  }
+
+  function getDefaultName(roleType: string): string {
+    const preset = rolePresets[roleType as keyof typeof rolePresets];
+    if (!preset) return '';
+    return pickRandom(preset.names);
   }
 
   onMount(async () => {
@@ -70,13 +161,14 @@
 
         if (spec.roles) {
           roles = Object.entries(spec.roles).map(([key, role]: [string, any]) => ({
-            key,
-            title: role.title || key,
+            id: generateUniqueId(),
+            roleType: key,
             name: role.name || '',
             persona: role.persona || '',
             provider: role.provider,
             model: role.model,
             useCustomModel: !!(role.provider || role.model),
+            showAdvanced: false,
           }));
         }
       } catch (e) {
@@ -86,36 +178,109 @@
       }
     } else {
       // Default roles for new spec
+      const pmName = getDefaultName('pm');
+      const engName = getDefaultName('engineer');
       roles = [
-        { key: 'pm', title: 'Project Manager', name: '', persona: '', useCustomModel: false },
-        { key: 'engineer', title: 'Software Engineer', name: '', persona: '', useCustomModel: false },
+        {
+          id: generateUniqueId(),
+          roleType: 'pm',
+          name: pmName,
+          persona: generatePersona('pm', pmName),
+          useCustomModel: false,
+          showAdvanced: false,
+        },
+        {
+          id: generateUniqueId(),
+          roleType: 'engineer',
+          name: engName,
+          persona: generatePersona('engineer', engName),
+          useCustomModel: false,
+          showAdvanced: false,
+        },
       ];
       clientFacing = ['pm'];
     }
   });
 
-  function addRole() {
+  function addRole(roleType: string = 'engineer') {
+    const name = getDefaultName(roleType);
     roles = [...roles, {
-      key: '',
-      title: '',
-      name: '',
-      persona: '',
-      useCustomModel: false
+      id: generateUniqueId(),
+      roleType,
+      name,
+      persona: generatePersona(roleType, name),
+      useCustomModel: false,
+      showAdvanced: false,
     }];
   }
 
-  function removeRole(index: number) {
-    const roleKey = roles[index].key;
-    roles = roles.filter((_, i) => i !== index);
-    clientFacing = clientFacing.filter(k => k !== roleKey);
+  function removeRole(id: string) {
+    const role = roles.find(r => r.id === id);
+    if (role) {
+      clientFacing = clientFacing.filter(k => k !== role.roleType);
+    }
+    roles = roles.filter(r => r.id !== id);
   }
 
-  function toggleClientFacing(roleKey: string) {
-    if (clientFacing.includes(roleKey)) {
-      clientFacing = clientFacing.filter(k => k !== roleKey);
+  function updateRoleType(id: string, newType: string) {
+    roles = roles.map(r => {
+      if (r.id === id) {
+        const newName = getDefaultName(newType);
+        return {
+          ...r,
+          roleType: newType,
+          name: newName,
+          persona: generatePersona(newType, newName),
+        };
+      }
+      return r;
+    });
+  }
+
+  function updateRoleName(id: string, newName: string) {
+    roles = roles.map(r => {
+      if (r.id === id) {
+        return {
+          ...r,
+          name: newName,
+          persona: generatePersona(r.roleType, newName),
+        };
+      }
+      return r;
+    });
+  }
+
+  function regeneratePersona(id: string) {
+    roles = roles.map(r => {
+      if (r.id === id) {
+        return {
+          ...r,
+          persona: generatePersona(r.roleType, r.name),
+        };
+      }
+      return r;
+    });
+  }
+
+  function toggleClientFacing(roleType: string) {
+    if (clientFacing.includes(roleType)) {
+      clientFacing = clientFacing.filter(k => k !== roleType);
     } else {
-      clientFacing = [...clientFacing, roleKey];
+      clientFacing = [...clientFacing, roleType];
     }
+  }
+
+  function toggleAdvanced(id: string) {
+    roles = roles.map(r => {
+      if (r.id === id) {
+        return { ...r, showAdvanced: !r.showAdvanced };
+      }
+      return r;
+    });
+  }
+
+  function getRoleTitle(roleType: string): string {
+    return rolePresets[roleType as keyof typeof rolePresets]?.title || roleType;
   }
 
   async function handleSave() {
@@ -135,9 +300,9 @@
     try {
       const rolesObj: Record<string, any> = {};
       for (const role of roles) {
-        if (!role.key.trim()) continue;
-        rolesObj[role.key] = {
-          title: role.title || role.key,
+        if (!role.roleType.trim()) continue;
+        rolesObj[role.roleType] = {
+          title: getRoleTitle(role.roleType),
           ...(role.name && { name: role.name }),
           ...(role.persona && { persona: role.persona }),
           ...(role.useCustomModel && role.provider && { provider: role.provider }),
@@ -188,8 +353,8 @@
 <div class="modal-backdrop" on:click={handleBackdropClick}>
   <div class="modal">
     <div class="modal-header">
-      <h2>{$editingSpec ? 'Edit Spec' : 'Create Spec'}</h2>
-      <button class="btn-close" on:click={close}>×</button>
+      <h2>{$editingSpec ? 'Edit Team Spec' : 'Create Team Spec'}</h2>
+      <button class="btn-close" on:click={close}>&times;</button>
     </div>
 
     <div class="modal-body">
@@ -200,140 +365,174 @@
           <div class="error-message">{error}</div>
         {/if}
 
+        <!-- Team Info -->
         <div class="form-section">
-          <h3>Basic Info</h3>
-
-          <div class="form-row">
+          <div class="form-row two-cols">
             <div class="form-group">
-              <label for="spec-name">Spec Name</label>
+              <label for="spec-name">Team Name</label>
               <input
                 id="spec-name"
                 type="text"
                 bind:value={specName}
-                placeholder="dev-team"
+                placeholder="my-dev-team"
                 disabled={saving || !!$editingSpec}
               />
             </div>
 
             <div class="form-group">
-              <label for="spec-desc">Description</label>
+              <label for="spec-desc">Description (optional)</label>
               <input
                 id="spec-desc"
                 type="text"
                 bind:value={description}
-                placeholder="Development team with PM and engineers"
+                placeholder="What does this team do?"
                 disabled={saving}
               />
             </div>
           </div>
         </div>
 
+        <!-- Default Model -->
         <div class="form-section">
-          <h3>Default Model</h3>
-          <p class="section-hint">Default model for all roles. Can be overridden per role.</p>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="default-provider">Provider</label>
-              <select id="default-provider" bind:value={defaultProvider} disabled={saving}>
-                <option value="openrouter">OpenRouter</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="default-model">Model</label>
-              <select id="default-model" bind:value={defaultModel} disabled={saving}>
-                {#each getModelsForProvider(defaultProvider) as model}
-                  <option value={model}>{model}</option>
-                {/each}
-              </select>
-            </div>
+          <label class="section-label">Default AI Model</label>
+          <div class="model-selector">
+            <select bind:value={defaultProvider} disabled={saving}>
+              <option value="openrouter">OpenRouter</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+            </select>
+            <select bind:value={defaultModel} disabled={saving}>
+              {#each getModelsForProvider(defaultProvider) as model}
+                <option value={model}>{model.split('/').pop()}</option>
+              {/each}
+            </select>
           </div>
         </div>
 
+        <!-- Team Roles -->
         <div class="form-section">
           <div class="section-header">
-            <h3>Roles</h3>
-            <button class="btn-add" on:click={addRole} disabled={saving}>+ Add Role</button>
+            <label class="section-label">Team Members</label>
+            <div class="add-role-dropdown">
+              <button class="btn-add" type="button">+ Add Member</button>
+              <div class="dropdown-menu">
+                {#each Object.entries(rolePresets) as [key, preset]}
+                  <button type="button" on:click={() => addRole(key)}>
+                    {preset.title}
+                  </button>
+                {/each}
+              </div>
+            </div>
           </div>
 
-          <div class="roles-list">
-            {#each roles as role, i}
-              <div class="role-card">
-                <div class="role-header">
-                  <div class="role-main">
-                    <input
-                      type="text"
-                      bind:value={role.key}
-                      placeholder="role-key"
-                      class="role-key-input"
-                      disabled={saving}
-                    />
-                    <input
-                      type="text"
-                      bind:value={role.title}
-                      placeholder="Role Title"
-                      class="role-title-input"
-                      disabled={saving}
-                    />
-                  </div>
-                  <div class="role-actions">
-                    <label class="checkbox-label" title="Client can chat with this role">
-                      <input
-                        type="checkbox"
-                        checked={clientFacing.includes(role.key)}
-                        on:change={() => toggleClientFacing(role.key)}
-                        disabled={saving}
-                      />
-                      <span>Client Facing</span>
-                    </label>
-                    <button class="btn-remove" on:click={() => removeRole(i)} disabled={saving}>×</button>
-                  </div>
+          <div class="roles-grid">
+            {#each roles as role (role.id)}
+              <div class="role-card" class:client-facing={clientFacing.includes(role.roleType)}>
+                <div class="role-top">
+                  <select
+                    class="role-type-select"
+                    value={role.roleType}
+                    on:change={(e) => updateRoleType(role.id, e.currentTarget.value)}
+                    disabled={saving}
+                  >
+                    {#each Object.entries(rolePresets) as [key, preset]}
+                      <option value={key}>{preset.title}</option>
+                    {/each}
+                  </select>
+
+                  <button class="btn-remove" on:click={() => removeRole(role.id)} disabled={saving} title="Remove">
+                    &times;
+                  </button>
                 </div>
 
-                <div class="role-details">
+                <div class="role-name-row">
                   <input
                     type="text"
-                    bind:value={role.name}
-                    placeholder="Agent name (optional)"
+                    value={role.name}
+                    on:input={(e) => updateRoleName(role.id, e.currentTarget.value)}
+                    placeholder="Agent name"
                     disabled={saving}
                   />
+                  <button
+                    class="btn-dice"
+                    on:click={() => {
+                      updateRoleName(role.id, getDefaultName(role.roleType));
+                    }}
+                    title="Random name"
+                    disabled={saving}
+                  >
+                    🎲
+                  </button>
+                </div>
 
-                  <label class="checkbox-label model-toggle">
+                <div class="role-options">
+                  <label class="toggle-option">
                     <input
                       type="checkbox"
-                      bind:checked={role.useCustomModel}
+                      checked={clientFacing.includes(role.roleType)}
+                      on:change={() => toggleClientFacing(role.roleType)}
                       disabled={saving}
                     />
-                    <span>Use custom model for this role</span>
+                    <span>Client Facing</span>
                   </label>
 
-                  {#if role.useCustomModel}
-                    <div class="custom-model-row">
-                      <select bind:value={role.provider} disabled={saving}>
-                        <option value="">Same as default</option>
-                        <option value="openrouter">OpenRouter</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI</option>
-                      </select>
-                      <select bind:value={role.model} disabled={saving}>
-                        <option value="">Same as default</option>
-                        {#each getModelsForProvider(role.provider || defaultProvider) as model}
-                          <option value={model}>{model}</option>
-                        {/each}
-                      </select>
-                    </div>
-                  {/if}
-
-                  <textarea
-                    bind:value={role.persona}
-                    placeholder="Persona/instructions for this role..."
-                    rows="3"
-                    disabled={saving}
-                  ></textarea>
+                  <button
+                    class="btn-advanced"
+                    on:click={() => toggleAdvanced(role.id)}
+                    type="button"
+                  >
+                    {role.showAdvanced ? 'Hide' : 'Advanced'} ▾
+                  </button>
                 </div>
+
+                {#if role.showAdvanced}
+                  <div class="advanced-section">
+                    <label class="toggle-option">
+                      <input
+                        type="checkbox"
+                        bind:checked={role.useCustomModel}
+                        disabled={saving}
+                      />
+                      <span>Custom model</span>
+                    </label>
+
+                    {#if role.useCustomModel}
+                      <div class="custom-model">
+                        <select bind:value={role.provider} disabled={saving}>
+                          <option value="">Default</option>
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="anthropic">Anthropic</option>
+                          <option value="openai">OpenAI</option>
+                        </select>
+                        <select bind:value={role.model} disabled={saving}>
+                          <option value="">Default</option>
+                          {#each getModelsForProvider(role.provider || defaultProvider) as model}
+                            <option value={model}>{model.split('/').pop()}</option>
+                          {/each}
+                        </select>
+                      </div>
+                    {/if}
+
+                    <div class="persona-section">
+                      <div class="persona-header">
+                        <span>Persona</span>
+                        <button
+                          class="btn-regenerate"
+                          on:click={() => regeneratePersona(role.id)}
+                          title="Regenerate persona"
+                          type="button"
+                        >
+                          🔄 Regenerate
+                        </button>
+                      </div>
+                      <textarea
+                        bind:value={role.persona}
+                        rows="4"
+                        disabled={saving}
+                      ></textarea>
+                    </div>
+                  </div>
+                {/if}
               </div>
             {/each}
           </div>
@@ -346,7 +545,7 @@
         Cancel
       </button>
       <button class="btn-primary" on:click={handleSave} disabled={saving || loading}>
-        {saving ? 'Saving...' : 'Save Spec'}
+        {saving ? 'Saving...' : 'Create Team'}
       </button>
     </div>
   </div>
@@ -356,62 +555,67 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    backdrop-filter: blur(4px);
-    padding: 24px;
+    backdrop-filter: blur(8px);
+    padding: 20px;
   }
 
   .modal {
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 20px;
     width: 100%;
-    max-width: 700px;
-    max-height: 90vh;
+    max-width: 640px;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
+    padding: 24px 28px;
     border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
   }
 
   .modal-header h2 {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
+    background: var(--gradient-warm);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .btn-close {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: none;
-    border: none;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
     color: var(--text-secondary);
-    font-size: 24px;
+    font-size: 20px;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 10px;
+    transition: all 0.2s;
   }
 
   .btn-close:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-card);
     color: var(--text-primary);
+    border-color: var(--border-light);
   }
 
   .modal-body {
-    padding: 24px;
+    padding: 24px 28px;
     overflow-y: auto;
     flex: 1;
   }
@@ -426,27 +630,24 @@
     background: rgba(229, 115, 115, 0.1);
     border: 1px solid var(--error);
     color: var(--error);
-    padding: 12px;
-    border-radius: 8px;
+    padding: 12px 16px;
+    border-radius: 10px;
     font-size: 13px;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
 
   .form-section {
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
 
-  .form-section h3 {
-    font-size: 14px;
+  .section-label {
+    display: block;
+    font-size: 11px;
     font-weight: 600;
-    margin-bottom: 12px;
-    color: var(--text-primary);
-  }
-
-  .section-hint {
-    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
     color: var(--text-muted);
-    margin: -8px 0 12px;
   }
 
   .section-header {
@@ -456,191 +657,149 @@
     margin-bottom: 12px;
   }
 
-  .section-header h3 {
-    margin-bottom: 0;
-  }
-
-  .form-row {
+  .form-row.two-cols {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
 
-  .form-group {
-    margin-bottom: 16px;
-  }
-
   .form-group label {
     display: block;
-    font-size: 12px;
-    font-weight: 500;
-    margin-bottom: 6px;
-    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    color: var(--text-muted);
   }
 
-  .form-group input,
-  .form-group select,
-  .form-group textarea {
+  .form-group input {
     width: 100%;
-    padding: 10px 14px;
-    background: var(--bg-tertiary);
+    padding: 12px 16px;
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     color: var(--text-primary);
     font-size: 14px;
+    transition: all 0.2s;
   }
 
-  .form-group input:focus,
-  .form-group select:focus,
-  .form-group textarea:focus {
+  .form-group input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .model-selector {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 12px;
+  }
+
+  .model-selector select {
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .model-selector select:focus {
     outline: none;
     border-color: var(--accent);
   }
 
-  .form-group select option {
-    background: var(--bg-secondary);
+  .add-role-dropdown {
+    position: relative;
   }
 
   .btn-add {
-    padding: 6px 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--accent);
-    font-size: 12px;
+    padding: 8px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: var(--bg-primary);
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s;
   }
 
   .btn-add:hover {
-    background: var(--bg-card);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
   }
 
-  .roles-list {
+  .dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    min-width: 160px;
+    z-index: 10;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  }
+
+  .add-role-dropdown:hover .dropdown-menu {
+    display: block;
+  }
+
+  .dropdown-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+
+  .dropdown-menu button:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .roles-grid {
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
   .role-card {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px;
-  }
-
-  .role-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-    gap: 12px;
-  }
-
-  .role-main {
-    display: flex;
-    gap: 12px;
-    flex: 1;
-  }
-
-  .role-key-input {
-    width: 120px !important;
-    font-family: monospace;
-    font-size: 13px !important;
-  }
-
-  .role-title-input {
-    flex: 1;
-  }
-
-  .role-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
-  }
-
-  .model-toggle {
-    margin: 8px 0;
-  }
-
-  .btn-remove {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-muted);
-    font-size: 18px;
-    cursor: pointer;
-  }
-
-  .btn-remove:hover {
-    border-color: var(--error);
-    color: var(--error);
-  }
-
-  .role-details {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .role-details input,
-  .role-details select,
-  .role-details textarea {
-    width: 100%;
-    padding: 10px 14px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 13px;
+    border-radius: 14px;
+    padding: 16px;
+    transition: all 0.2s;
   }
 
-  .role-details textarea {
-    resize: vertical;
-    min-height: 60px;
+  .role-card.client-facing {
+    border-left: 3px solid var(--accent);
   }
 
-  .custom-model-row {
-    display: grid;
-    grid-template-columns: 1fr 2fr;
-    gap: 8px;
+  .role-card:hover {
+    border-color: var(--border-light);
   }
 
-  .custom-model-row select {
-    font-size: 12px;
-  }
-
-  .modal-footer {
+  .role-top {
     display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 20px 24px;
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
   }
 
-  .btn-secondary {
-    padding: 10px 20px;
+  .role-type-select {
+    padding: 8px 12px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -650,24 +809,217 @@
     cursor: pointer;
   }
 
+  .btn-remove {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-remove:hover {
+    border-color: var(--error);
+    color: var(--error);
+    background: rgba(229, 115, 115, 0.1);
+  }
+
+  .role-name-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .role-name-row input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .role-name-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .btn-dice {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-dice:hover {
+    background: var(--bg-card);
+    border-color: var(--border-light);
+    transform: rotate(15deg);
+  }
+
+  .role-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .toggle-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .toggle-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .btn-advanced {
+    padding: 6px 12px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-advanced:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+  }
+
+  .advanced-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .custom-model {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .custom-model select {
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 12px;
+  }
+
+  .persona-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .persona-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .btn-regenerate {
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-regenerate:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+  }
+
+  .persona-section textarea {
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .persona-section textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 28px;
+    border-top: 1px solid var(--border);
+  }
+
+  .btn-secondary {
+    padding: 12px 24px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
   .btn-secondary:hover:not(:disabled) {
     background: var(--bg-card);
+    border-color: var(--border-light);
   }
 
   .btn-primary {
-    padding: 10px 20px;
+    padding: 12px 28px;
     background: var(--gradient-warm);
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     color: var(--bg-primary);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s;
   }
 
   .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 4px 20px var(--accent-glow);
+    box-shadow: 0 6px 24px var(--accent-glow);
   }
 
   .btn-primary:disabled,

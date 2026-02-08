@@ -1,6 +1,6 @@
 <script lang="ts">
   import { showSpecEditorModal, editingSpec, specs } from '../stores/app';
-  import { getSpec, saveSpec, getSpecs, getProviders } from '../lib/api';
+  import { getSpec, saveSpec, getSpecs, getProviders, getSettings, type SettingsResponse } from '../lib/api';
   import { onMount } from 'svelte';
   import type { Provider } from '../types/api';
 
@@ -23,6 +23,8 @@
   let loading = false;
   let error = '';
   let providers: Provider[] = [];
+  let configuredProviders: Set<string> = new Set();
+  let prevProvider = '';
 
   // Role presets with auto-generated personas
   const rolePresets = {
@@ -142,11 +144,35 @@
     return pickRandom(preset.names);
   }
 
+  // Reset model when provider changes
+  $: if (defaultProvider && defaultProvider !== prevProvider) {
+    const models = getModelsForProvider(defaultProvider);
+    if (models.length > 0 && !models.includes(defaultModel)) {
+      defaultModel = models[0];
+    }
+    prevProvider = defaultProvider;
+  }
+
   onMount(async () => {
     try {
       providers = await getProviders();
     } catch (e) {
       console.error('Failed to load providers:', e);
+    }
+
+    // Fetch settings to know which providers are configured
+    try {
+      const settings = await getSettings();
+      if (settings.providers) {
+        if (settings.providers.anthropic?.configured) configuredProviders.add('anthropic');
+        if (settings.providers.openai?.configured) configuredProviders.add('openai');
+        if (settings.providers.openrouter?.configured) configuredProviders.add('openrouter');
+        if (settings.providers.groq?.configured) configuredProviders.add('groq');
+        if (settings.providers.ollama?.configured) configuredProviders.add('ollama');
+        configuredProviders = configuredProviders; // trigger reactivity
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
     }
 
     if ($editingSpec) {
@@ -157,6 +183,8 @@
         description = spec.description || '';
         defaultProvider = spec.provider || 'openrouter';
         defaultModel = spec.model || 'anthropic/claude-3.5-sonnet';
+        // Set prevProvider AFTER loading to prevent reactive model reset
+        prevProvider = defaultProvider;
         clientFacing = spec.client_facing || [];
 
         if (spec.roles) {
@@ -177,6 +205,7 @@
         loading = false;
       }
     } else {
+      prevProvider = defaultProvider;
       // Default roles for new spec
       const pmName = getDefaultName('pm');
       const engName = getDefaultName('engineer');
@@ -397,9 +426,15 @@
           <label class="section-label">Default AI Model</label>
           <div class="model-selector">
             <select bind:value={defaultProvider} disabled={saving}>
-              <option value="openrouter">OpenRouter</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
+              <option value="openrouter" disabled={!configuredProviders.has('openrouter')}>
+                OpenRouter {configuredProviders.has('openrouter') ? '' : '(not configured)'}
+              </option>
+              <option value="anthropic" disabled={!configuredProviders.has('anthropic')}>
+                Anthropic {configuredProviders.has('anthropic') ? '' : '(not configured)'}
+              </option>
+              <option value="openai" disabled={!configuredProviders.has('openai')}>
+                OpenAI {configuredProviders.has('openai') ? '' : '(not configured)'}
+              </option>
             </select>
             <select bind:value={defaultModel} disabled={saving}>
               {#each getModelsForProvider(defaultProvider) as model}
@@ -500,9 +535,15 @@
                       <div class="custom-model">
                         <select bind:value={role.provider} disabled={saving}>
                           <option value="">Default</option>
-                          <option value="openrouter">OpenRouter</option>
-                          <option value="anthropic">Anthropic</option>
-                          <option value="openai">OpenAI</option>
+                          <option value="openrouter" disabled={!configuredProviders.has('openrouter')}>
+                            OpenRouter {configuredProviders.has('openrouter') ? '' : '(not configured)'}
+                          </option>
+                          <option value="anthropic" disabled={!configuredProviders.has('anthropic')}>
+                            Anthropic {configuredProviders.has('anthropic') ? '' : '(not configured)'}
+                          </option>
+                          <option value="openai" disabled={!configuredProviders.has('openai')}>
+                            OpenAI {configuredProviders.has('openai') ? '' : '(not configured)'}
+                          </option>
                         </select>
                         <select bind:value={role.model} disabled={saving}>
                           <option value="">Default</option>
@@ -545,7 +586,7 @@
         Cancel
       </button>
       <button class="btn-primary" on:click={handleSave} disabled={saving || loading}>
-        {saving ? 'Saving...' : 'Create Team'}
+        {saving ? 'Saving...' : ($editingSpec ? 'Update Spec' : 'Create Spec')}
       </button>
     </div>
   </div>

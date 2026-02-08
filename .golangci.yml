@@ -1,0 +1,30 @@
+run:
+  timeout: 5m
+
+linters:
+  disable:
+    - errcheck  # Too strict for this project
+  enable:
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+linters-settings:
+  staticcheck:
+    checks:
+      - all
+      - "-SA1019"  # Ignore deprecated warnings
+      - "-SA9003"  # Ignore empty branch warnings
+
+issues:
+  exclude-rules:
+    # Ignore unused functions in cmd/ (may be used conditionally)
+    - path: cmd/
+      linters:
+        - unused
+    # Ignore gosimple suggestions
+    - linters:
+        - gosimple
+      text: "S1017|S1024"

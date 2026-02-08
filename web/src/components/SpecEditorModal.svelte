@@ -188,16 +188,22 @@
         clientFacing = spec.client_facing || [];
 
         if (spec.roles) {
-          roles = Object.entries(spec.roles).map(([key, role]: [string, any]) => ({
-            id: generateUniqueId(),
-            roleType: key,
-            name: role.name || '',
-            persona: role.persona || '',
-            provider: role.provider,
-            model: role.model,
-            useCustomModel: !!(role.provider || role.model),
-            showAdvanced: false,
-          }));
+          // Only mark as custom model if it differs from the spec default
+          roles = Object.entries(spec.roles).map(([key, role]: [string, any]) => {
+            const hasCustomProvider = role.provider && role.provider !== defaultProvider;
+            const hasCustomModel = role.model && role.model !== defaultModel;
+            const useCustom = hasCustomProvider || hasCustomModel;
+            return {
+              id: generateUniqueId(),
+              roleType: key,
+              name: role.name || '',
+              persona: role.persona || '',
+              provider: useCustom ? role.provider : undefined,
+              model: useCustom ? role.model : undefined,
+              useCustomModel: useCustom,
+              showAdvanced: false,
+            };
+          });
         }
       } catch (e) {
         error = 'Failed to load spec';
@@ -394,11 +400,11 @@
           <div class="error-message">{error}</div>
         {/if}
 
-        <!-- Team Info -->
+        <!-- Spec Info -->
         <div class="form-section">
           <div class="form-row two-cols">
             <div class="form-group">
-              <label for="spec-name">Team Name</label>
+              <label for="spec-name">Spec Name</label>
               <input
                 id="spec-name"
                 type="text"
@@ -409,7 +415,7 @@
             </div>
 
             <div class="form-group">
-              <label for="spec-desc">Description (optional)</label>
+              <label for="spec-desc">Description</label>
               <input
                 id="spec-desc"
                 type="text"
@@ -444,12 +450,12 @@
           </div>
         </div>
 
-        <!-- Team Roles -->
+        <!-- Roles -->
         <div class="form-section">
           <div class="section-header">
-            <label class="section-label">Team Members</label>
+            <label class="section-label">Roles</label>
             <div class="add-role-dropdown">
-              <button class="btn-add" type="button">+ Add Member</button>
+              <button class="btn-add" type="button">+ Add Role</button>
               <div class="dropdown-menu">
                 {#each Object.entries(rolePresets) as [key, preset]}
                   <button type="button" on:click={() => addRole(key)}>

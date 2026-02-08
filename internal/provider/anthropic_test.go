@@ -106,11 +106,11 @@ func TestAnthropic_AutoResume(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resumeCalled := false
+	var resumeCalled atomic.Bool
 	provider := NewAnthropic("test-key", server.URL,
 		WithAutoResume(true),
 		WithResumeCallback(func() {
-			resumeCalled = true
+			resumeCalled.Store(true)
 		}),
 	)
 
@@ -134,7 +134,7 @@ func TestAnthropic_AutoResume(t *testing.T) {
 
 	// Wait a bit for callback
 	time.Sleep(100 * time.Millisecond)
-	if !resumeCalled {
+	if !resumeCalled.Load() {
 		t.Error("Resume callback should have been called")
 	}
 }
@@ -152,14 +152,14 @@ func TestAnthropic_RateLimitCallbacks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rateLimitedCalled := false
-	var capturedInfo RateLimitInfo
+	var rateLimitedCalled atomic.Bool
+	var capturedType atomic.Value
 
 	provider := NewAnthropic("test-key", server.URL,
 		WithAutoResume(false),
 		WithRateLimitCallback(func(info RateLimitInfo) {
-			rateLimitedCalled = true
-			capturedInfo = info
+			rateLimitedCalled.Store(true)
+			capturedType.Store(info.Type)
 		}),
 	)
 
@@ -174,12 +174,12 @@ func TestAnthropic_RateLimitCallbacks(t *testing.T) {
 	// Wait for async callback
 	time.Sleep(100 * time.Millisecond)
 
-	if !rateLimitedCalled {
+	if !rateLimitedCalled.Load() {
 		t.Error("Rate limited callback should have been called")
 	}
 
-	if capturedInfo.Type != RateLimitWeekly {
-		t.Errorf("Expected weekly limit, got %s", capturedInfo.Type)
+	if capturedType.Load().(RateLimitType) != RateLimitWeekly {
+		t.Errorf("Expected weekly limit, got %s", capturedType.Load())
 	}
 }
 

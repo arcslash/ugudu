@@ -24,6 +24,7 @@ type Server struct {
 	logger  *logger.Logger
 	server  *http.Server
 	mux     *http.ServeMux
+	wsHub   *WSHub
 }
 
 // NewServer creates a new API server
@@ -32,7 +33,9 @@ func NewServer(mgr *manager.Manager, log *logger.Logger) *Server {
 		manager: mgr,
 		logger:  log,
 		mux:     http.NewServeMux(),
+		wsHub:   NewWSHub(),
 	}
+	go s.wsHub.Run()
 	s.setupRoutes()
 	return s
 }
@@ -83,6 +86,9 @@ func (s *Server) setupRoutes() {
 
 	// Serve static files (images)
 	s.mux.HandleFunc("/api/static/", s.handleStatic)
+
+	// WebSocket for real-time updates
+	s.mux.HandleFunc("/api/ws", s.HandleWS)
 
 	// Serve embedded UI at root
 	s.mux.Handle("/", UIHandler())
@@ -578,6 +584,23 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Start team if not running
 	_ = s.manager.StartTeam(req.Team)
 
+	// Get team to access members for status updates
+	t, _ := s.manager.GetTeam(req.Team)
+
+	// Determine which member will handle the request
+	targetRole := req.To
+	if targetRole == "" {
+		// Default to first client-facing member
+		if t != nil && len(t.Spec.ClientFacing) > 0 {
+			targetRole = t.Spec.ClientFacing[0]
+		}
+	}
+
+	// Broadcast that the target member is now busy
+	if targetRole != "" {
+		s.wsHub.BroadcastMemberStatus(req.Team, targetRole, "busy", "Processing request...")
+	}
+
 	var respChan <-chan team.Message
 	var err error
 
@@ -588,6 +611,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		// Reset status on error
+		if targetRole != "" {
+			s.wsHub.BroadcastMemberStatus(req.Team, targetRole, "idle", "")
+		}
 		s.error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -597,9 +624,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var responses []map[string]interface{}
+	activeMember := targetRole // Track currently active member
 	for {
 		select {
 		case <-ctx.Done():
+			// Reset all busy members to idle on timeout
+			if activeMember != "" {
+				s.wsHub.BroadcastMemberStatus(req.Team, activeMember, "idle", "")
+			}
 			s.json(w, http.StatusOK, map[string]interface{}{
 				"responses": responses,
 				"timeout":   true,
@@ -608,6 +640,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 		case msg, ok := <-respChan:
 			if !ok {
+				// Channel closed - all done, reset to idle
+				if activeMember != "" {
+					s.wsHub.BroadcastMemberStatus(req.Team, activeMember, "idle", "")
+				}
 				s.json(w, http.StatusOK, map[string]interface{}{
 					"responses": responses,
 				})
@@ -620,6 +656,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				"content": content,
 				"type":    msg.Type,
 			})
+
+			// Broadcast activity update
+			s.wsHub.BroadcastActivity(req.Team, msg.From, content, nil)
+
+			// Check for delegation patterns in the message
+			if msg.Type == "delegation" || strings.Contains(content, "delegating to") || strings.Contains(content, "asking") {
+				// Previous member is now idle, new member is busy
+				if activeMember != "" && activeMember != msg.From {
+					s.wsHub.BroadcastMemberStatus(req.Team, activeMember, "idle", "")
+				}
+				s.wsHub.BroadcastMemberStatus(req.Team, msg.From, "busy", "Working on delegated task...")
+				activeMember = msg.From
+			}
 		}
 	}
 }

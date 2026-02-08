@@ -7,6 +7,7 @@
   import SpecEditorModal from './components/SpecEditorModal.svelte';
   import { teams, specs, loadChatHistory, showCreateTeamModal, showSpecEditorModal } from './stores/app';
   import { getTeams, getSpecs } from './lib/api';
+  import { connectWebSocket } from './stores/websocket';
 
   onMount(async () => {
     loadChatHistory();

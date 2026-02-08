@@ -6,6 +6,50 @@
   let messageInput = '';
   let sending = false;
 
+  // Simple markdown renderer for chat messages
+  function renderMarkdown(text: string): string {
+    if (!text) return '';
+
+    // Escape HTML first
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Code blocks (```)
+    html = html.replace(/```([\s\S]*?)```/g, '<pre class="code-block">$1</pre>');
+
+    // Inline code (`)
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+    // Bold (**text**)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (*text*)
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // Headers (## or ###)
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+
+    // Lists (- item or * item or numbered)
+    html = html.replace(/^(\d+)\. (.+)$/gm, '<li class="numbered">$2</li>');
+    html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+
+    // Wrap consecutive <li> in <ul> or <ol>
+    html = html.replace(/(<li class="numbered">[\s\S]*?<\/li>(\n|$))+/g, (match) => {
+      return '<ol>' + match.replace(/ class="numbered"/g, '') + '</ol>';
+    });
+    html = html.replace(/(<li>[\s\S]*?<\/li>(\n|$))+/g, (match) => {
+      return '<ul>' + match + '</ul>';
+    });
+
+    // Line breaks
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
+  }
+
   $: chatKey = $currentTeamName && $selectedMember ? getChatKey($currentTeamName, $selectedMember.id) : null;
   $: messages = chatKey ? ($chatHistory[chatKey] || []) : [];
   $: canChat = $selectedMember?.client_facing === true;
@@ -191,7 +235,7 @@
                     </span>
                   {/if}
                 </div>
-                <div class="message-content">{msg.content}</div>
+                <div class="message-content">{@html renderMarkdown(msg.content)}</div>
               </div>
             {:else}
               <div class="empty-chat">
@@ -535,8 +579,69 @@
 
   .message-content {
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
+  }
+
+  .message-content :global(strong) {
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .message-content :global(em) {
+    font-style: italic;
+  }
+
+  .message-content :global(h3),
+  .message-content :global(h4) {
+    margin: 12px 0 8px 0;
+    font-weight: 600;
+  }
+
+  .message-content :global(h3) {
+    font-size: 15px;
+  }
+
+  .message-content :global(h4) {
+    font-size: 14px;
+  }
+
+  .message-content :global(ul),
+  .message-content :global(ol) {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  .message-content :global(li) {
+    margin: 4px 0;
+  }
+
+  .message-content :global(.code-block) {
+    background: var(--bg-tertiary);
+    padding: 12px;
+    border-radius: 6px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+    display: block;
     white-space: pre-wrap;
+  }
+
+  .message-content :global(.inline-code) {
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 12px;
+  }
+
+  .message.user .message-content :global(strong) {
+    color: var(--bg-primary);
+  }
+
+  .message.user .message-content :global(.code-block),
+  .message.user .message-content :global(.inline-code) {
+    background: rgba(0, 0, 0, 0.2);
   }
 
   .empty-chat {

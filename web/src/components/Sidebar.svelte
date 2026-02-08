@@ -50,7 +50,7 @@
 
 <aside class="sidebar">
   <div class="logo-section">
-    <img src="/api/static/ugudu_orc.png" alt="Ugudu" class="logo-img" on:error={(e) => e.currentTarget.style.display = 'none'} />
+    <img src="/api/static/logo.png" alt="Ugudu" class="logo-img" on:error={(e) => e.currentTarget.style.display = 'none'} />
     <div class="logo">Ugudu</div>
   </div>
   <div class="tagline">AI Team Orchestration</div>

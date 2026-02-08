@@ -1,7 +1,7 @@
 title: Ugudu
 description: AI Team Orchestration - Create and manage teams of AI agents
-baseurl: ""
-url: "https://arcslash.github.io/ugudu"
+baseurl: "/ugudu"
+url: "https://arcslash.github.io"
 
 theme: jekyll-theme-minimal
 

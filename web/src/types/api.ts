@@ -20,7 +20,8 @@ export interface Member {
   name: string;
   title: string;
   role: string;
-  status: 'idle' | 'working' | 'thinking';
+  status: 'idle' | 'busy' | 'working' | 'thinking' | 'error';
+  statusMessage?: string;
   client_facing: boolean;
   provider?: string;
   model?: string;

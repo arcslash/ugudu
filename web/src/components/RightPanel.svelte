@@ -2,6 +2,7 @@
   import { currentView, currentTeam, teamMembers, selectedMember, currentTeamName } from '../stores/app';
   import { stopTeam, deleteTeam } from '../lib/api';
   import { teams } from '../stores/app';
+  import { wsConnected, activityFeed } from '../stores/websocket';
 
   async function handleStopTeam() {
     if (!$currentTeamName) return;
@@ -36,9 +37,21 @@
 
   function getStatusColor(status: string): string {
     switch (status) {
+      case 'busy':
       case 'working': return 'var(--warning)';
       case 'thinking': return 'var(--accent)';
+      case 'error': return 'var(--error)';
       default: return 'var(--success)';
+    }
+  }
+
+  function getStatusLabel(status: string): string {
+    switch (status) {
+      case 'busy': return 'Working';
+      case 'working': return 'Working';
+      case 'thinking': return 'Thinking';
+      case 'error': return 'Error';
+      default: return 'Idle';
     }
   }
 </script>
@@ -47,7 +60,12 @@
   {#if $currentView === 'team' && $currentTeam}
     <div class="panel-header">
       <h2>Team Members</h2>
-      <span class="member-count">{$teamMembers.length} agents</span>
+      <div class="header-meta">
+        <span class="ws-status" class:connected={$wsConnected} title={$wsConnected ? 'Real-time connected' : 'Connecting...'}>
+          {$wsConnected ? '●' : '○'}
+        </span>
+        <span class="member-count">{$teamMembers.length} agents</span>
+      </div>
     </div>
 
     <div class="members-list">
@@ -71,7 +89,9 @@
           <div class="member-status">
             <div
               class="status-dot"
+              class:pulsing={member.status === 'busy' || member.status === 'working'}
               style="background: {getStatusColor(member.status)}"
+              title={member.statusMessage || getStatusLabel(member.status)}
             ></div>
             {#if member.client_facing}
               <span class="client-facing-badge" title="Client Facing">💬</span>
@@ -114,9 +134,15 @@
         <div class="detail-row">
           <span class="detail-label">Status</span>
           <span class="detail-value status" style="color: {getStatusColor($selectedMember.status)}">
-            {$selectedMember.status}
+            {getStatusLabel($selectedMember.status)}
           </span>
         </div>
+        {#if $selectedMember.statusMessage}
+          <div class="detail-row">
+            <span class="detail-label">Activity</span>
+            <span class="detail-value task">{$selectedMember.statusMessage}</span>
+          </div>
+        {/if}
         {#if $selectedMember.provider}
           <div class="detail-row">
             <span class="detail-label">Provider</span>
@@ -209,6 +235,22 @@
   .panel-header h2 {
     font-size: 16px;
     font-weight: 600;
+  }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ws-status {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: color 0.3s;
+  }
+
+  .ws-status.connected {
+    color: var(--success);
   }
 
   .member-count {
@@ -307,6 +349,22 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    transition: background 0.3s ease;
+  }
+
+  .status-dot.pulsing {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.3);
+      opacity: 0.7;
+    }
   }
 
   .client-facing-badge {

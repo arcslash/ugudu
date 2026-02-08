@@ -1,5 +1,9 @@
 # Ugudu
 
+<p align="center">
+  <img src="images/ugudu_orc.png" alt="Ugudu" width="300">
+</p>
+
 AI Team Orchestration - Create and manage teams of AI agents that collaborate like a real development team.
 
 ## Install

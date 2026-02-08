@@ -1,0 +1,35 @@
+title: Ugudu
+description: AI Team Orchestration - Create and manage teams of AI agents
+baseurl: ""
+url: "https://arcslash.github.io/ugudu"
+
+theme: jekyll-theme-minimal
+
+# Navigation
+nav:
+  - title: Home
+    url: /
+  - title: Installation
+    url: /installation
+  - title: Quick Start
+    url: /quickstart
+  - title: Configuration
+    url: /configuration
+  - title: Team Specs
+    url: /team-specs
+  - title: Architecture
+    url: /architecture
+  - title: MCP Integration
+    url: /mcp
+  - title: API Reference
+    url: /api
+
+# Markdown settings
+markdown: kramdown
+highlighter: rouge
+
+# Exclude from build
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md

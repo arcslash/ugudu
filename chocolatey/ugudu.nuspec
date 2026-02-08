@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>ugudu</id>
+    <version>0.1.0</version>
+    <title>Ugudu</title>
+    <authors>Arcslash</authors>
+    <owners>Arcslash</owners>
+    <projectUrl>https://github.com/arcslash/ugudu</projectUrl>
+    <licenseUrl>https://github.com/arcslash/ugudu/blob/main/LICENSE</licenseUrl>
+    <iconUrl>https://raw.githubusercontent.com/arcslash/ugudu/main/assets/icon.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>
+Ugudu - AI Team Orchestration System
+
+Create and manage teams of AI agents working together. Build software development teams,
+research teams, trading teams, and more using AI agents from Anthropic, OpenAI, or local models.
+
+Features:
+- Create teams of AI agents with different roles
+- Agents communicate and delegate tasks to each other
+- Built-in templates for common team types
+- Daemon architecture for persistent operation
+- HTTP API and CLI interface
+- Supports Claude, GPT, Ollama, and Groq models
+
+Quick Start:
+  ugudu config init           # Configure API keys
+  ugudu daemon                 # Start the daemon
+  ugudu spec new my-team      # Create a team spec
+  ugudu team create alpha --spec my-team
+  ugudu ask alpha "Hello team!"
+    </description>
+    <summary>AI Team Orchestration System - Create and manage teams of AI agents</summary>
+    <releaseNotes>https://github.com/arcslash/ugudu/releases</releaseNotes>
+    <copyright>Copyright (c) 2026 Arcslash</copyright>
+    <tags>ai agents llm orchestration teams claude openai cli automation</tags>
+    <packageSourceUrl>https://github.com/arcslash/ugudu</packageSourceUrl>
+    <docsUrl>https://github.com/arcslash/ugudu#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/arcslash/ugudu/issues</bugTrackerUrl>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

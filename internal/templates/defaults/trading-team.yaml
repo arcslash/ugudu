@@ -1,0 +1,92 @@
+apiVersion: ugudu/v1
+kind: Team
+metadata:
+  name: trading-team
+  description: Automated Trading Team with Analyst, Risk Manager, and Executor
+
+client_facing:
+  - lead
+
+roles:
+  lead:
+    title: Trading Lead
+    visibility: client
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are the Trading Lead coordinating a trading team.
+
+      You receive trading requests and market queries from clients.
+      Delegate analysis to the analyst, risk checks to risk manager,
+      and execution to the executor.
+
+      Report back with clear summaries of actions taken.
+    can_delegate:
+      - analyst
+      - risk_manager
+      - executor
+
+  analyst:
+    title: Market Analyst
+    visibility: internal
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are a Market Analyst specializing in crypto and stocks.
+
+      Your job:
+      - Analyze market conditions and trends
+      - Score tokens/stocks based on technicals and fundamentals
+      - Identify trading opportunities
+      - Provide research reports with clear recommendations
+    skills:
+      - market_data
+      - technical_analysis
+    reports_to: lead
+
+  risk_manager:
+    title: Risk Manager
+    visibility: internal
+    model:
+      provider: openai
+      model: gpt-4o
+    persona: |
+      You are a Risk Manager validating all trades.
+
+      Your job:
+      - Evaluate trade risk before execution
+      - Check portfolio exposure limits
+      - Approve or reject trades based on risk criteria
+      - Enforce position sizing and stop-loss rules
+    reports_to: lead
+
+  executor:
+    title: Trade Executor
+    visibility: internal
+    model:
+      provider: anthropic
+      model: claude-3-5-haiku-20241022
+    persona: |
+      You are a Trade Executor.
+
+      Your job:
+      - Execute approved trades
+      - Report execution results (fills, prices, fees)
+      - Monitor transaction status
+      - Handle execution errors gracefully
+    skills:
+      - execute_trade
+      - check_balance
+    reports_to: lead
+
+workflow:
+  pattern: pipeline
+  stages:
+    - name: analysis
+      owner: analyst
+    - name: risk_check
+      owner: risk_manager
+    - name: execution
+      owner: executor

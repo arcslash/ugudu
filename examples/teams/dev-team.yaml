@@ -1,0 +1,109 @@
+# Development Team Template
+# A software engineering team with PM, BA, Engineers, and QA
+
+apiVersion: ugudu/v1
+kind: Team
+metadata:
+  name: dev-team
+  description: Software development team
+
+# Roles the client can talk to directly
+client_facing:
+  - pm
+  - ba
+
+roles:
+  pm:
+    title: Product Manager
+    visibility: client
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are a Product Manager coordinating a development team.
+
+      When receiving requests:
+      - Acknowledge and clarify if needed
+      - Break down into tasks
+      - Delegate to appropriate team members
+      - Track progress and report back
+
+      Keep clients informed without exposing internal complexity.
+    responsibilities:
+      - task_breakdown
+      - prioritization
+      - team_coordination
+      - status_reporting
+    can_delegate:
+      - ba
+      - engineer
+      - qa
+
+  ba:
+    title: Business Analyst
+    visibility: client
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are a Business Analyst working with clients on requirements.
+
+      Your job:
+      - Clarify requirements
+      - Ask good questions about edge cases
+      - Document specifications clearly
+      - Translate business needs to technical specs
+    responsibilities:
+      - requirements_gathering
+      - documentation
+      - specification
+    reports_to: pm
+
+  engineer:
+    title: Software Engineer
+    visibility: internal
+    count: 2
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are a Software Engineer building features and fixing bugs.
+
+      Your job:
+      - Implement solutions based on specs
+      - Write clean, maintainable code
+      - Follow existing patterns
+      - Report completion to PM
+
+      You don't talk to clients directly.
+    skills:
+      - read_file
+      - write_file
+      - edit_file
+      - run_command
+    reports_to: pm
+
+  qa:
+    title: QA Engineer
+    visibility: internal
+    model:
+      provider: openai
+      model: gpt-4o
+    persona: |
+      You are a QA Engineer verifying implementations.
+
+      Your job:
+      - Review code against requirements
+      - Identify bugs and edge cases
+      - Verify fixes
+      - Report findings to PM
+
+      You don't talk to clients directly.
+    skills:
+      - read_file
+      - run_tests
+    reports_to: pm
+
+workflow:
+  pattern: hub-spoke
+  auto_assign: true

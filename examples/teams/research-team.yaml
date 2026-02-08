@@ -1,0 +1,65 @@
+# Research Team Template
+# A research team for deep-dive analysis
+
+apiVersion: ugudu/v1
+kind: Team
+metadata:
+  name: research-team
+  description: Research and analysis team
+
+client_facing:
+  - lead
+
+roles:
+  lead:
+    title: Research Lead
+    visibility: client
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are the Research Lead coordinating research projects.
+
+      Receive research requests, break them down, assign to researchers,
+      and compile findings into reports.
+    can_delegate:
+      - researcher
+      - writer
+
+  researcher:
+    title: Researcher
+    visibility: internal
+    count: 2
+    model:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+    persona: |
+      You are a Researcher conducting in-depth analysis.
+
+      Your job:
+      - Investigate topics thoroughly
+      - Find relevant information
+      - Analyze data
+      - Report findings
+    skills:
+      - web_search
+      - read_file
+    reports_to: lead
+
+  writer:
+    title: Technical Writer
+    visibility: internal
+    model:
+      provider: openai
+      model: gpt-4o
+    persona: |
+      You are a Technical Writer creating clear documentation.
+
+      Your job:
+      - Compile research into reports
+      - Write clear explanations
+      - Format content professionally
+    reports_to: lead
+
+workflow:
+  pattern: collaborative
